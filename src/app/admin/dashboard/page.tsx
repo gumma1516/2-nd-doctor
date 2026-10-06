@@ -1,0 +1,128 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { Activity, Users, Stethoscope, FileText, IndianRupee } from "lucide-react";
+import { Alert, Button } from "@/components/ui";
+import { PrivateFileList } from "@/components/PrivateFileList";
+import { useAuth } from "@/lib/auth/AuthProvider";
+import { adminListUsers } from "@/lib/data/users";
+import { adminListDoctors, adminSetDoctorStatus } from "@/lib/data/doctors";
+import { adminListCases, displayCaseId } from "@/lib/data/cases";
+import { toDate, type UserProfile, type DoctorProfile, type DoctorStatus, type Case } from "@/lib/data/types";
+import { formatINR } from "@/lib/constants";
+import { errorMessage } from "@/lib/errors";
+
+const TABS = [
+  { id: "overview", label: "Overview", Icon: Activity },
+  { id: "patients", label: "Patients", Icon: Users },
+  { id: "doctors", label: "Doctors", Icon: Stethoscope },
+  { id: "cases", label: "Cases", Icon: FileText },
+  { id: "revenue", label: "Revenue", Icon: IndianRupee },
+] as const;
+type TabId = (typeof TABS)[number]["id"];
+const verifiedPayment = (item: Case) => item.paymentStatus === "PAID" && Boolean(item.paymentId && item.paymentOrderId && item.paidAt);
+const panel = "rounded-2xl border border-zinc-800 bg-zinc-900 p-6";
+
+export default function AdminDashboard() {
+  const { profile } = useAuth();
+  const [activeTab, setActiveTab] = useState<TabId>("overview");
+  const [patients, setPatients] = useState<UserProfile[]>([]);
+  const [doctors, setDoctors] = useState<DoctorProfile[]>([]);
+  const [cases, setCases] = useState<Case[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [savingUid, setSavingUid] = useState<string | null>(null);
+  const [revision, setRevision] = useState(0);
+  const reviewing = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([adminListUsers(), adminListDoctors(), adminListCases()]).then(([users, applications, consultations]) => {
+      if (!cancelled) {
+        setPatients(users.filter((user) => user.role === "patient"));
+        setDoctors(applications);
+        setCases(consultations);
+      }
+    }).catch((err: unknown) => {
+      if (!cancelled) setError(errorMessage(err, "Could not load admin data."));
+    }).finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [revision]);
+
+  const refresh = () => { setLoading(true); setError(null); setRevision((value) => value + 1); };
+  const review = async (doctor: DoctorProfile, status: DoctorStatus) => {
+    if (reviewing.current) return;
+    reviewing.current = true;
+    setSavingUid(doctor.uid);
+    setActionError(null);
+    setNotice(null);
+    try {
+      await adminSetDoctorStatus(doctor.uid, status);
+      setDoctors((current) => current.map((item) => item.uid === doctor.uid ? { ...item, status } : item));
+      setNotice(doctor.fullName + (status === "VERIFIED" ? " has been verified." : " has been rejected."));
+    } catch (err) {
+      setActionError(errorMessage(err, "Could not save the review. Please retry."));
+    } finally {
+      reviewing.current = false;
+      setSavingUid(null);
+    }
+  };
+  const paidCases = cases.filter(verifiedPayment);
+  const revenue = paidCases.reduce((sum, item) => sum + item.amount, 0);
+  const pending = doctors.filter((doctor) => doctor.status === "PENDING");
+  const patientName = (uid: string) => patients.find((patient) => patient.uid === uid)?.fullName || uid;
+
+  return <div className="min-h-screen bg-zinc-950 text-zinc-300 md:flex">
+    <aside className="border-b md:border-b-0 md:border-r border-zinc-800 md:w-60 md:shrink-0 bg-zinc-900/50 p-4">
+      <p className="p-3 text-xl font-bold text-white">SecondCare Admin</p>
+      <nav aria-label="Admin" className="flex overflow-x-auto gap-2 md:flex-col md:mt-5">{TABS.map(({ id, label, Icon }) => <button key={id} type="button" aria-current={activeTab === id ? "page" : undefined} onClick={() => setActiveTab(id)} className={"flex items-center gap-3 whitespace-nowrap rounded-xl px-4 py-3 text-left font-medium " + (activeTab === id ? "bg-brand-500/10 text-brand-300" : "hover:bg-zinc-800 text-zinc-400")}><Icon className="size-5" aria-hidden />{label}</button>)}</nav>
+      <Link href="/" className="inline-block p-4 text-sm text-zinc-400 hover:text-white">Back to site</Link>
+    </aside>
+    <main className="min-w-0 flex-1 p-4 sm:p-8 space-y-6">
+      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-800 pb-6"><div><h1 className="text-2xl font-bold text-white">{TABS.find((tab) => tab.id === activeTab)?.label}</h1><p className="mt-1 text-sm text-zinc-400">{profile?.fullName || "Administrator"}</p></div><Button variant="secondary" loading={loading} disabled={Boolean(savingUid)} onClick={refresh} className="w-auto">Refresh data</Button></header>
+      {error && <Alert>{error} Use Refresh data to retry.</Alert>}
+      {actionError && <Alert>{actionError}</Alert>}
+      {notice && <Alert tone="success">{notice}</Alert>}
+      {loading ? <p role="status">Loading admin data…</p> : !error && <>
+        {activeTab === "overview" && <>
+          <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-4">
+            <Stat label="Patients" value={String(patients.length)} detail="Registered patient accounts" />
+            <Stat label="Verified doctors" value={String(doctors.filter((doctor) => doctor.status === "VERIFIED").length)} detail={pending.length + " awaiting review"} />
+            <Stat label="Cases in review" value={String(cases.filter((item) => item.status === "IN_REVIEW").length)} detail={cases.length + " total consultations"} />
+            <Stat label="Verified revenue" value={formatINR(revenue)} detail={paidCases.length + " verified payments"} />
+          </div>
+          <section className={panel}><h2 className="text-xl font-semibold text-white mb-4">Recent consultations</h2><CaseRows cases={cases.slice(0, 5)} patientName={patientName} /></section>
+          <section className={panel}><h2 className="text-xl font-semibold text-white mb-3">Doctor approvals</h2><p>{pending.length ? pending.length + " applications need a credential review." : "No applications are awaiting review."}</p><Button variant="secondary" className="mt-4 w-auto" onClick={() => setActiveTab("doctors")}>Review doctors</Button></section>
+        </>}
+        {activeTab === "patients" && <section className={panel}><h2 className="text-xl font-semibold text-white mb-4">Registered patients</h2>{!patients.length ? <p>No patients yet.</p> : <div className="overflow-x-auto"><table className="w-full text-sm text-left"><thead className="text-zinc-400"><tr><th scope="col" className="p-3">Name</th><th scope="col" className="p-3">Email</th><th scope="col" className="p-3">Phone</th><th scope="col" className="p-3">Status</th><th scope="col" className="p-3">Joined</th></tr></thead><tbody>{patients.map((patient) => <tr key={patient.uid} className="border-t border-zinc-800"><td className="p-3 text-white">{patient.fullName}</td><td className="p-3">{patient.email}</td><td className="p-3">{patient.phone}</td><td className="p-3">{patient.status}</td><td className="p-3">{toDate(patient.createdAt)?.toLocaleDateString("en-IN") ?? "—"}</td></tr>)}</tbody></table></div>}</section>}
+        {activeTab === "doctors" && <section className="space-y-4"><h2 className="text-xl font-semibold text-white">Applications and verified doctors</h2>{!doctors.length ? <p>No doctor applications yet.</p> : doctors.map((doctor) => <article key={doctor.uid} className={panel + " space-y-4"}>
+          <div className="flex flex-wrap justify-between gap-3"><div><h3 className="text-lg font-semibold text-white">{doctor.fullName}</h3><p className="text-sm text-zinc-400">{doctor.specialization} · {doctor.experience} years of experience</p></div><span className="text-sm text-teal-300">{doctor.status}</span></div>
+          <dl className="grid sm:grid-cols-2 gap-3 text-sm"><div><dt className="text-zinc-500">Registration</dt><dd>{doctor.regNumber} · {doctor.council}</dd></div><div><dt className="text-zinc-500">Contact</dt><dd>{doctor.email} · {doctor.phone}</dd></div></dl>
+          <details className="rounded-xl border border-zinc-800 p-4"><summary className="cursor-pointer font-medium text-brand-300">Review credentials ({doctor.files.length})</summary><div className="mt-4"><PrivateFileList files={doctor.files} /></div></details>
+          <div className="flex flex-wrap gap-3">{doctor.status !== "VERIFIED" && <Button accent="teal" className="w-auto" disabled={Boolean(savingUid)} loading={savingUid === doctor.uid} onClick={() => void review(doctor, "VERIFIED")}>Verify {doctor.fullName}</Button>}{doctor.status !== "REJECTED" && <Button variant="secondary" className="w-auto" disabled={Boolean(savingUid)} onClick={() => void review(doctor, "REJECTED")}>{doctor.status === "VERIFIED" ? "Revoke verification" : "Reject application"}</Button>}</div>
+        </article>)}</section>}
+        {activeTab === "cases" && <section className={panel}><h2 className="text-xl font-semibold text-white mb-4">All consultations</h2><CaseRows cases={cases} patientName={patientName} detailed /></section>}
+        {activeTab === "revenue" && <section className={panel + " space-y-5"}><h2 className="text-xl font-semibold text-white">Verified payment revenue</h2><p className="text-3xl font-bold text-teal-300">{formatINR(revenue)}</p><p className="text-sm text-zinc-400">Only payments verified by the payment service are included. Pending and legacy unverified records are excluded.</p>{!paidCases.length ? <p>No verified payments yet.</p> : <div className="overflow-x-auto"><table className="w-full text-sm text-left"><thead className="text-zinc-400"><tr><th scope="col" className="p-3">Case</th><th scope="col" className="p-3">Payment reference</th><th scope="col" className="p-3">Paid on</th><th scope="col" className="p-3">Amount</th></tr></thead><tbody>{paidCases.map((item) => <tr key={item.id} className="border-t border-zinc-800"><td className="p-3">{displayCaseId(item.id)}</td><td className="p-3 break-all">{item.paymentId}</td><td className="p-3">{toDate(item.paidAt)?.toLocaleString("en-IN")}</td><td className="p-3">{formatINR(item.amount)}</td></tr>)}</tbody></table></div>}</section>}
+      </>}
+    </main>
+  </div>;
+}
+
+function Stat({ label, value, detail }: { label: string; value: string; detail: string }) {
+  return <div className={panel}><h2 className="text-sm text-zinc-400">{label}</h2><p className="text-3xl font-bold text-white mt-3">{value}</p><p className="text-xs text-zinc-400 mt-3">{detail}</p></div>;
+}
+
+function CaseRows({ cases, patientName, detailed = false }: { cases: Case[]; patientName: (uid: string) => string; detailed?: boolean }) {
+  if (!cases.length) return <p>No consultations yet.</p>;
+  return <ul className="space-y-4">{cases.map((item) => <li key={item.id} className="border border-zinc-800 rounded-xl p-4 space-y-3">
+    <div className="flex flex-wrap justify-between gap-3"><h3 className="font-semibold text-white">{displayCaseId(item.id)} · {item.department}</h3><span className="text-sm text-teal-300">{item.status.replaceAll("_", " ")}</span></div>
+    <p className="text-sm text-zinc-400">Patient: {patientName(item.ownerId)} · {toDate(item.createdAt)?.toLocaleDateString("en-IN") ?? "Date unavailable"}</p>
+    <p className="text-xs text-zinc-500">{verifiedPayment(item) ? "Verified payment: " + formatINR(item.amount) : "Payment not verified"}</p>
+    {detailed && <details><summary className="cursor-pointer text-sm text-brand-300">Consultation details</summary><div className="mt-4 space-y-4"><p className="whitespace-pre-wrap break-words">{item.chiefComplaint}</p><p className="whitespace-pre-wrap break-words text-sm text-zinc-400">Medications: {item.medications || "None provided"}</p><PrivateFileList files={item.files} />{item.opinion && <div><h4 className="font-semibold text-teal-300">Opinion from {item.doctorName}</h4><p className="whitespace-pre-wrap break-words mt-2">{item.opinion}</p></div>}</div></details>}
+  </li>)}</ul>;
+}

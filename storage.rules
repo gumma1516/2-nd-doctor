@@ -1,0 +1,48 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() { return request.auth != null && request.auth.token.email_verified == true; }
+    function userPath() { return /databases/(default)/documents/users/$(request.auth.uid); }
+    function profile() { return firestore.get(userPath()).data; }
+    function active() {
+      return signedIn() && firestore.exists(userPath()) && profile().status == 'active'
+        && (profile().sessionsRevokedAt == null || timestamp.value(request.auth.token.auth_time * 1000) > profile().sessionsRevokedAt);
+    }
+    function admin() { return active() && profile().role == 'admin'; }
+    function onboardingOwner(uid) {
+      return signedIn() && request.auth.uid == uid && (!firestore.exists(userPath()) || active());
+    }
+    function safeUpload(maxSize, docx) {
+      return request.resource != null && request.resource.size > 0 && request.resource.size <= maxSize
+        && (request.resource.contentType in ['application/pdf','image/jpeg','image/png']
+          || (docx && request.resource.contentType == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'));
+    }
+    match /users/{uid}/credentials/{fileName} {
+      allow read: if onboardingOwner(uid) || admin();
+      allow write: if onboardingOwner(uid)
+        && !firestore.exists(/databases/(default)/documents/doctorProfiles/$(uid))
+        && (request.resource == null || (resource == null && safeUpload(10 * 1024 * 1024,false)));
+    }
+    match /users/{uid}/avatar/{fileName} {
+      allow read: if active() && (request.auth.uid == uid || admin());
+      allow write: if active() && request.auth.uid == uid
+        && (request.resource == null || (request.resource.size > 0 && request.resource.size <= 5 * 1024 * 1024
+          && request.resource.contentType in ['image/jpeg','image/png']));
+    }
+    match /users/{uid}/cases/{caseId}/{fileName} {
+      function consultation() { return firestore.get(/databases/(default)/documents/cases/$(caseId)).data; }
+      function verifiedDoctor() {
+        return profile().role == 'doctor' && profile().doctorAccess.status == 'VERIFIED'
+          && profile().doctorAccess.specialization == consultation().department
+          && consultation().paymentStatus == 'PAID'
+          && (consultation().status == 'IN_REVIEW' || (consultation().status == 'COMPLETED' && consultation().doctorId == request.auth.uid));
+      }
+      allow read: if active() && consultation().ownerId == uid
+        && (request.auth.uid == uid || admin() || verifiedDoctor());
+      allow write: if active() && request.auth.uid == uid && consultation().ownerId == uid
+        && consultation().status == 'AWAITING_PAYMENT' && consultation().paymentOrderId == null
+        && (request.resource == null || (resource == null && safeUpload(50 * 1024 * 1024,true)));
+    }
+    match /{path=**} { allow read, write: if false; }
+  }
+}

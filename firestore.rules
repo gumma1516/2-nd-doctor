@@ -1,0 +1,170 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+    function userPath(uid) { return /databases/$(database)/documents/users/$(uid); }
+    function doctorPath(uid) { return /databases/$(database)/documents/doctorProfiles/$(uid); }
+    function currentUser() { return get(userPath(request.auth.uid)).data; }
+    function active() {
+      return signedIn() && exists(userPath(request.auth.uid))
+        && currentUser().status == 'active'
+        && (currentUser().sessionsRevokedAt == null
+          || timestamp.value(request.auth.token.auth_time * 1000) > currentUser().sessionsRevokedAt);
+    }
+    function admin() { return active() && currentUser().role == 'admin'; }
+    function patient() { return active() && currentUser().role == 'patient'; }
+    function specialty(s) {
+      return s in ['Cardiology', 'Neurology', 'Oncology', 'Orthopedics', 'Nephrology', 'Pulmonology', 'Gastroenterology', 'Urology'];
+    }
+    function doctorFor(department) {
+      return active() && currentUser().role == 'doctor'
+        && currentUser().doctorAccess.status == 'VERIFIED'
+        && currentUser().doctorAccess.specialization == department;
+    }
+    function text(value, min, max) { return value is string && value.size() >= min && value.size() <= max; }
+    function settings(s) {
+      return s is map && s.keys().hasOnly(['emailNotifications', 'language'])
+        && s.emailNotifications is bool && s.language in ['en', 'hi'];
+    }
+    function fileAt(files, i, prefix, maxSize) {
+      return files.size() <= i || (files[i] is map
+        && files[i].keys().hasOnly(['name', 'path', 'size', 'contentType'])
+        && text(files[i].name, 1, 255) && text(files[i].path, 1, 500)
+        && files[i].path.matches(prefix + '[^/]+')
+        && files[i].size is int && files[i].size > 0 && files[i].size <= maxSize
+        && files[i].contentType in ['application/pdf', 'image/jpeg', 'image/png', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']);
+    }
+    function fileSize(files, i) { return files.size() <= i ? 0 : files[i].size; }
+    function filesValid(files, prefix, maxFiles, maxSize) {
+      return files is list && files.size() <= maxFiles
+        && fileAt(files,0,prefix,maxSize) && fileAt(files,1,prefix,maxSize)
+        && fileAt(files,2,prefix,maxSize) && fileAt(files,3,prefix,maxSize)
+        && fileAt(files,4,prefix,maxSize) && fileAt(files,5,prefix,maxSize)
+        && fileAt(files,6,prefix,maxSize) && fileAt(files,7,prefix,maxSize)
+        && fileAt(files,8,prefix,maxSize) && fileAt(files,9,prefix,maxSize)
+        && fileAt(files,10,prefix,maxSize) && fileAt(files,11,prefix,maxSize)
+        && fileAt(files,12,prefix,maxSize) && fileAt(files,13,prefix,maxSize)
+        && fileAt(files,14,prefix,maxSize) && fileAt(files,15,prefix,maxSize)
+        && fileAt(files,16,prefix,maxSize) && fileAt(files,17,prefix,maxSize)
+        && fileAt(files,18,prefix,maxSize) && fileAt(files,19,prefix,maxSize)
+        && fileSize(files,0) + fileSize(files,1) + fileSize(files,2) + fileSize(files,3)
+          + fileSize(files,4) + fileSize(files,5) + fileSize(files,6) + fileSize(files,7)
+          + fileSize(files,8) + fileSize(files,9) + fileSize(files,10) + fileSize(files,11)
+          + fileSize(files,12) + fileSize(files,13) + fileSize(files,14) + fileSize(files,15)
+          + fileSize(files,16) + fileSize(files,17) + fileSize(files,18) + fileSize(files,19) <= 500 * 1024 * 1024;
+    }
+    function profileFields(p) {
+      return text(p.fullName, 3, 120) && text(p.phone, 10, 16)
+        && (p.dob == null || text(p.dob,10,10))
+        && (p.place == null || text(p.place,2,120)) && settings(p.settings)
+        && (p.photoPath == null || p.photoPath.matches('users/' + p.uid + '/avatar/[^/]+'))
+        && (p.photoURL == null || text(p.photoURL,1,2000));
+    }
+    match /users/{uid} {
+      allow get: if signedIn() && ((request.auth.uid == uid && (!exists(userPath(uid)) || active())) || admin());
+      allow list: if admin();
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['uid','email','role','fullName','phone','dob','place','photoURL','photoPath','status','isVerified','settings','sessionsRevokedAt','createdAt','updatedAt','lastLogin','doctorAccess'])
+        && request.resource.data.uid == uid && request.resource.data.email == request.auth.token.email
+        && request.resource.data.role in ['patient','doctor']
+        && request.resource.data.status == 'active' && request.resource.data.isVerified == true
+        && request.resource.data.sessionsRevokedAt == null
+        && request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time
+        && request.resource.data.lastLogin == request.time && profileFields(request.resource.data)
+        && ((request.resource.data.role == 'patient' && request.resource.data.doctorAccess == null && !existsAfter(doctorPath(uid)))
+          || (request.resource.data.role == 'doctor'
+            && request.resource.data.doctorAccess.keys().hasOnly(['status','specialization'])
+            && request.resource.data.doctorAccess.status == getAfter(doctorPath(uid)).data.status
+            && request.resource.data.doctorAccess.specialization == getAfter(doctorPath(uid)).data.specialization));
+      allow update: if (active() && request.auth.uid == uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fullName','phone','dob','place','photoURL','photoPath','settings','updatedAt','lastLogin','sessionsRevokedAt'])
+        && profileFields(request.resource.data)
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['updatedAt']) || request.resource.data.updatedAt == request.time)
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['lastLogin']) || request.resource.data.lastLogin == request.time)
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['sessionsRevokedAt']) || request.resource.data.sessionsRevokedAt == request.time))
+        || (active() && request.auth.uid == uid && resource.data.role == 'doctor'
+          && !exists(doctorPath(uid))
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['doctorAccess','updatedAt'])
+          && request.resource.data.doctorAccess.keys().hasOnly(['status','specialization'])
+          && request.resource.data.doctorAccess.status == 'PENDING'
+          && getAfter(doctorPath(uid)).data.status == 'PENDING'
+          && request.resource.data.doctorAccess.specialization == getAfter(doctorPath(uid)).data.specialization)
+        || (admin() && resource.data.role == 'doctor'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['doctorAccess','updatedAt'])
+          && request.resource.data.doctorAccess.keys().hasOnly(['status','specialization'])
+          && request.resource.data.doctorAccess.status == getAfter(doctorPath(uid)).data.status
+          && request.resource.data.doctorAccess.specialization == getAfter(doctorPath(uid)).data.specialization);
+      allow delete: if false;
+      match /audit/{id} {
+        allow read: if active() && (request.auth.uid == uid || admin());
+        allow create: if active() && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['event','meta','at'])
+          && text(request.resource.data.event,1,80) && request.resource.data.meta is map
+          && request.resource.data.meta.size() <= 10 && request.resource.data.at == request.time;
+        allow update, delete: if false;
+      }
+    }
+    match /doctorProfiles/{uid} {
+      allow get: if signedIn() && ((request.auth.uid == uid && (!exists(userPath(uid)) || active())) || admin());
+      allow list: if admin();
+      allow create: if signedIn() && request.auth.uid == uid
+        && getAfter(userPath(uid)).data.role == 'doctor' && getAfter(userPath(uid)).data.status == 'active'
+        && request.resource.data.keys().hasOnly(['uid','email','fullName','phone','regNumber','council','specialization','experience','files','status','createdAt','updatedAt','reviewedAt'])
+        && request.resource.data.uid == uid && request.resource.data.email == request.auth.token.email
+        && request.resource.data.status == 'PENDING' && request.resource.data.reviewedAt == null
+        && request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time
+        && text(request.resource.data.fullName,3,120) && text(request.resource.data.phone,10,16)
+        && text(request.resource.data.regNumber,4,20) && text(request.resource.data.council,2,120)
+        && specialty(request.resource.data.specialization)
+        && request.resource.data.experience is int && request.resource.data.experience >= 0 && request.resource.data.experience <= 70
+        && request.resource.data.files.size() > 0
+        && filesValid(request.resource.data.files,'users/' + uid + '/credentials/',5,10 * 1024 * 1024)
+        && getAfter(userPath(uid)).data.doctorAccess.status == 'PENDING'
+        && getAfter(userPath(uid)).data.doctorAccess.specialization == request.resource.data.specialization;
+      allow update: if admin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','reviewedAt','updatedAt'])
+        && request.resource.data.status in ['PENDING','VERIFIED','REJECTED']
+        && request.resource.data.reviewedAt == request.time
+        && getAfter(userPath(uid)).data.doctorAccess.status == request.resource.data.status
+        && getAfter(userPath(uid)).data.doctorAccess.specialization == resource.data.specialization;
+      allow delete: if false;
+    }
+    function caseFields(c, id) {
+      return specialty(c.department) && text(c.chiefComplaint,20,2000) && text(c.medications,0,1000)
+        && text(c.consentAt,20,40) && c.amount == 1650
+        && filesValid(c.files,'users/' + c.ownerId + '/cases/' + id + '/',20,50 * 1024 * 1024);
+    }
+    function doctorCanRead(c) {
+      return doctorFor(c.department) && c.paymentStatus == 'PAID'
+        && (c.status == 'IN_REVIEW' || (c.status == 'COMPLETED' && c.doctorId == request.auth.uid));
+    }
+    match /cases/{id} {
+      allow get: if active() && ((!exists(/databases/$(database)/documents/cases/$(id)) && patient())
+        || resource.data.ownerId == request.auth.uid || admin() || doctorCanRead(resource.data));
+      allow list: if active() && (resource.data.ownerId == request.auth.uid || admin() || doctorCanRead(resource.data));
+      allow create: if patient() && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.keys().hasOnly(['ownerId','department','chiefComplaint','medications','files','consentAt','amount','status','doctorId','doctorName','opinion','paidAt','createdAt','completedAt','paymentStatus','paymentOrderId','paymentId','updatedAt'])
+        && caseFields(request.resource.data,id)
+        && request.resource.data.status == 'AWAITING_PAYMENT' && request.resource.data.paymentStatus == 'PENDING'
+        && request.resource.data.paymentOrderId == null && request.resource.data.paymentId == null
+        && request.resource.data.paidAt == null && request.resource.data.createdAt == request.time
+        && request.resource.data.doctorId == null && request.resource.data.doctorName == null
+        && request.resource.data.opinion == null && request.resource.data.completedAt == null;
+      allow update: if (patient() && resource.data.ownerId == request.auth.uid
+        && resource.data.status == 'AWAITING_PAYMENT' && resource.data.paymentStatus == 'PENDING'
+        && resource.data.paymentOrderId == null
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['files','department','chiefComplaint','medications','consentAt','updatedAt'])
+        && caseFields(request.resource.data,id))
+        || (doctorFor(resource.data.department) && resource.data.status == 'IN_REVIEW' && resource.data.paymentStatus == 'PAID'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','doctorId','doctorName','opinion','completedAt','updatedAt'])
+          && request.resource.data.status == 'COMPLETED' && request.resource.data.doctorId == request.auth.uid
+          && request.resource.data.doctorName == currentUser().fullName
+          && text(request.resource.data.opinion,20,20000) && request.resource.data.completedAt == request.time);
+      allow delete: if false;
+    }
+    // Payment bookkeeping, legacy collections, and all other paths are server-only.
+    match /{document=**} { allow read, write: if false; }
+  }
+}
