@@ -1,16 +1,20 @@
 "use client";
 
 import Link from "next/link";
+import { MEDICAL_AI_AVAILABLE } from "@/lib/features";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Sparkles } from "lucide-react";
 import { FileDropzone, type UploadItem } from "@/components/FileDropzone";
 import { Alert, Button, Field, Textarea } from "@/components/ui";
 import { PATIENT_UPLOAD, SPECIALTIES, type Specialty } from "@/lib/constants";
 import { draftStore, type SavedDraft } from "@/lib/draft-store";
 import { useAuth } from "@/lib/auth/AuthProvider";
 import { cn } from "@/lib/cn";
+import { WorkspaceHeader } from "@/components/WorkspaceUI";
+import { ConsultationSteps } from "@/components/ConsultationSteps";
 import { ClientOnly } from "@/components/ClientOnly";
+import { getMyCase } from "@/lib/data/cases";
 
 type Errors = Partial<Record<"department" | "files" | "chiefComplaint" | "consent", string>>;
 
@@ -24,18 +28,32 @@ export default function NewConsultation() {
 
 function ConsultationForm() {
   const { user } = useAuth();
-  const [saved, setSaved] = useState<{ uid: string; value: SavedDraft | null } | null>(null);
+  const [saved, setSaved] = useState<{ uid: string; value: SavedDraft | null; submitted: boolean } | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
     if (!user) return;
     let active = true;
-    draftStore.get(user.uid).then((value) => { if (active) setSaved({ uid: user.uid, value }); })
+    draftStore.get(user.uid).then(async (value) => {
+      const submitted = value ? !!(await getMyCase(user.uid, value.draft.id)) : false;
+      if (active) setSaved({ uid: user.uid, value, submitted });
+    })
       .catch((err: unknown) => { if (active) setError(err instanceof Error ? err.message : "Unable to restore your draft."); });
     return () => { active = false; };
   }, [user]);
   if (error) return <div className="max-w-xl mx-auto p-8"><Alert>{error}</Alert><p className="text-zinc-400 mt-4">Enable browser storage, then reload this page.</p></div>;
   if (!user || saved?.uid !== user.uid) return <div className="p-8 text-zinc-400" role="status">Loading your consultation…</div>;
-  return <EditableConsultation key={user.uid} uid={user.uid} initial={saved.value} />;
+  if (saved.submitted && saved.value) return <div className="max-w-xl mx-auto p-8">
+    <h1 className="text-2xl font-bold text-white mb-4">Your consultation has been saved</h1>
+    <p className="text-zinc-400 mb-6">Resume its payment from your dashboard. Submitted details and reports are kept together so the specialist receives the records you checked out with.</p>
+    <Link className="text-brand-400 hover:underline" href={`/patient/dashboard/payment?caseId=${encodeURIComponent(saved.value.draft.id)}`}>Resume saved consultation</Link>
+    <Button className="mt-6" onClick={async () => {
+      try {
+        await draftStore.clear(user.uid, saved.value!.draft.id);
+        setSaved({ uid: user.uid, value: null, submitted: false });
+      } catch (err) { setError(err instanceof Error ? err.message : "Unable to start a new draft."); }
+    }}>Start a separate consultation</Button>
+  </div>;
+  return <EditableConsultation key={`${user.uid}:${saved.value?.draft.id ?? "new"}`} uid={user.uid} initial={saved.value} />;
 }
 
 function EditableConsultation({ uid, initial }: { uid: string; initial: SavedDraft | null }) {
@@ -51,12 +69,40 @@ function EditableConsultation({ uid, initial }: { uid: string; initial: SavedDra
   const [errors, setErrors] = useState<Errors>({});
   const [submitting, setSubmitting] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [analyzing, setAnalyzing] = useState(false);
+  const [aiNotice, setAiNotice] = useState<{ message: string; type: "success" | "error" } | null>(null);
+
+  const suggestSpecialty = async () => {
+    if (chiefComplaint.trim().length < 20) {
+      setAiNotice({ message: "Please enter your chief complaint below first.", type: "error" });
+      document.getElementById("consult-chiefComplaint")?.focus();
+      return;
+    }
+    setAnalyzing(true);
+    setAiNotice(null);
+    try {
+      const res = await fetch("/api/ai/triage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chiefComplaint, medications })
+      });
+      if (!res.ok) throw new Error("Analysis failed");
+      const data = await res.json();
+      setDepartment(data.department);
+      setErrors((p) => ({ ...p, department: undefined }));
+      setAiNotice({ message: `AI Suggested ${data.department}: ${data.reasoning}`, type: "success" });
+    } catch {
+      setAiNotice({ message: "Could not auto-suggest a specialty at this time. Please select manually.", type: "error" });
+    } finally {
+      setAnalyzing(false);
+    }
+  };
 
   const validate = (): Errors => {
     const e: Errors = {};
     if (!department) e.department = "Please select a department.";
     if (files.length === 0) e.files = "Upload at least one medical report.";
-    if (chiefComplaint.trim().length < 20)
+    if (chiefComplaint.trim().length < 20 || chiefComplaint.length > 2000)
       e.chiefComplaint = "Please describe your concern in at least 20 characters.";
     if (!consent) e.consent = "You must consent to share your records with a specialist.";
     return e;
@@ -95,20 +141,14 @@ function EditableConsultation({ uid, initial }: { uid: string; initial: SavedDra
   const errorCount = Object.keys(errors).length;
 
   return (
-    <div className="flex-1 flex flex-col bg-zinc-950">
-      <div className="bg-brand-950/50 border-b border-brand-900/50 py-12 px-4 sm:px-6 lg:px-8 text-center text-white relative overflow-hidden">
-        <div className="absolute top-0 inset-x-0 h-full bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-brand-900/40 via-transparent to-transparent -z-10" />
-        <h1 className="text-3xl font-bold text-white">Request a Second Opinion</h1>
-        <p className="mt-2 text-brand-200/80 max-w-xl mx-auto">
-          Tell us about your condition and upload your reports. A verified specialist will review your case.
-        </p>
-      </div>
-
-      <div className="max-w-4xl mx-auto w-full px-4 sm:px-6 lg:px-8 -mt-8 pb-24 z-10">
+    <div className="page-shell workspace-shell max-w-[1040px]">
+      <WorkspaceHeader eyebrow="A second perspective" title="Tell us your story." description="Choose your specialty and share the records you want your specialist to review." back={{href:"/patient/dashboard",label:"My consultations"}} />
+      <ConsultationSteps current="details" />
+      <div className="w-full pb-8">
         <form
           onSubmit={handleSubmit}
           noValidate
-          className="bg-zinc-900 rounded-3xl shadow-2xl border border-zinc-800 p-6 sm:p-8"
+          className="glass-panel rounded-3xl p-6 sm:p-9"
         >
           {saveError && <div className="mb-6"><Alert>{saveError}</Alert></div>}
           {errorCount > 0 && (
@@ -119,15 +159,21 @@ function EditableConsultation({ uid, initial }: { uid: string; initial: SavedDra
 
           {/* 1. Department */}
           <fieldset className="mb-10">
-            <legend className="w-full text-xl font-semibold text-white border-b border-zinc-800 pb-4 mb-6">
-              1. Select Department
-            </legend>
+            <legend id="specialty-legend" className="text-xl font-medium tracking-tight text-white mb-4">1. Choose your specialty</legend>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-zinc-800 pb-4 mb-6 gap-3">
+              <p className="text-xs text-zinc-400">Choose the field that fits your concern.</p>
+              {MEDICAL_AI_AVAILABLE && <Button type="button" variant="secondary" className="w-auto text-xs! min-h-10! px-3!" loading={analyzing} onClick={suggestSpecialty}>
+                <Sparkles className="size-3.5" aria-hidden />Suggest a specialty
+              </Button>}
+            </div>
+            {aiNotice && <div className="mb-6"><Alert tone={aiNotice.type === "success" ? "success" : "info"}>{aiNotice.message}</Alert></div>}
             <div
               id="consult-department"
               tabIndex={-1}
               role="radiogroup"
+              aria-labelledby="specialty-legend"
               aria-invalid={!!errors.department || undefined}
-              className="grid grid-cols-2 md:grid-cols-4 gap-4 focus:outline-none"
+              className="grid grid-cols-2 md:grid-cols-4 gap-3 focus:outline-none"
             >
               {SPECIALTIES.map((dept) => (
                 <label key={dept} className="cursor-pointer">
@@ -148,7 +194,7 @@ function EditableConsultation({ uid, initial }: { uid: string; initial: SavedDra
                       errors.department ? "border-red-500/40" : "border-zinc-800"
                     )}
                   >
-                    <span className="font-medium text-sm sm:text-base">{dept}</span>
+                    <span className="font-medium text-xs sm:text-sm">{dept}</span>
                   </div>
                 </label>
               ))}
@@ -163,7 +209,7 @@ function EditableConsultation({ uid, initial }: { uid: string; initial: SavedDra
           {/* 2. Reports */}
           <section className="mb-10" aria-labelledby="reports-heading">
             <h2 id="reports-heading" className="text-xl font-semibold text-white border-b border-zinc-800 pb-4 mb-6">
-              2. Upload Medical Reports
+              2. Add your medical records
             </h2>
             <FileDropzone
               id="consult-files"
@@ -181,7 +227,7 @@ function EditableConsultation({ uid, initial }: { uid: string; initial: SavedDra
           {/* 3. History */}
           <section className="mb-10" aria-labelledby="history-heading">
             <h2 id="history-heading" className="text-xl font-semibold text-white border-b border-zinc-800 pb-4 mb-6">
-              3. Brief Medical History
+              3. Share your medical history
             </h2>
             <div className="space-y-4">
               <Field
@@ -248,9 +294,9 @@ function EditableConsultation({ uid, initial }: { uid: string; initial: SavedDra
               id="proceed-to-payment-btn"
               type="submit"
               loading={submitting}
-              className="w-auto px-8 py-4 rounded-full text-lg font-semibold"
+              className="w-full sm:w-auto px-7!"
             >
-              Proceed to Payment <ArrowRight className="size-5" aria-hidden />
+              Continue to payment <ArrowRight className="size-5" aria-hidden />
             </Button>
           </div>
         </form>

@@ -1,7 +1,8 @@
 import { collection, doc, getDoc, getDocs, runTransaction, serverTimestamp } from "firebase/firestore";
 import type { User } from "firebase/auth";
 import { db } from "@/lib/firebase";
-import { DOCTOR_UPLOAD, SPECIALTIES, type Specialty } from "@/lib/constants";
+import { DOCTOR_UPLOAD, REG_NUMBER_REGEX, SPECIALTIES, type Specialty } from "@/lib/constants";
+import { normalizeProfile } from "@/lib/auth/profile-input";
 import type { DoctorProfile, DoctorStatus, UserProfile } from "./types";
 import { deleteUserFile, uploadUserFiles } from "./files";
 import { logAudit, newUserProfileData } from "./users";
@@ -44,6 +45,11 @@ export async function recoverDoctorApplication(user: User): Promise<DoctorProfil
 
 export async function submitDoctorApplication(user: User, app: DoctorApplication) {
   if (!user.email) throw new Error("Signed-in account has no email.");
+  if (!user.emailVerified) throw new Error("Verify your email before submitting an application.");
+  const contact = normalizeProfile({ fullName: app.fullName, phone: app.phone, dob: null, place: null });
+  if (!REG_NUMBER_REGEX.test(app.regNumber.trim())) throw new Error("Enter a valid medical registration number.");
+  if (app.council.trim().length < 2 || app.council.trim().length > 120) throw new Error("Enter a medical council between 2 and 120 characters.");
+  if (!Number.isInteger(app.experience) || app.experience < 0 || app.experience > 60) throw new Error("Enter whole years of experience from 0 to 60.");
   if (!SPECIALTIES.includes(app.specialization)) throw new Error("Select a valid specialization.");
   if (!app.files.length || app.files.length > DOCTOR_UPLOAD.maxFiles) throw new Error("Upload one to five credential documents.");
   if (await recoverDoctorApplication(user)) return;
@@ -57,7 +63,7 @@ export async function submitDoctorApplication(user: User, app: DoctorApplication
       if (profile.exists() && profile.data().role !== "doctor") throw new Error("This account already has a different role.");
       const doctorAccess = { status: "PENDING" as const, specialization: app.specialization };
       transaction.set(doctorRef(user.uid), {
-        uid: user.uid, email: user.email, fullName: app.fullName.trim(), phone: app.phone,
+        uid: user.uid, email: user.email, fullName: contact.fullName, phone: contact.phone,
         regNumber: app.regNumber.trim(), council: app.council.trim(), specialization: app.specialization,
         experience: app.experience, files, status: "PENDING", createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(), reviewedAt: null,
@@ -66,7 +72,7 @@ export async function submitDoctorApplication(user: User, app: DoctorApplication
         transaction.update(userRef(user.uid), { doctorAccess, updatedAt: serverTimestamp() });
       } else {
         transaction.set(userRef(user.uid), newUserProfileData(user, {
-          role: "doctor", fullName: app.fullName, phone: app.phone,
+          role: "doctor", fullName: contact.fullName, phone: contact.phone,
         }, doctorAccess));
       }
     });
@@ -85,6 +91,7 @@ export async function adminListDoctors(): Promise<DoctorProfile[]> {
 }
 
 export async function adminSetDoctorStatus(uid: string, status: DoctorStatus) {
+  if (!["PENDING", "VERIFIED", "REJECTED"].includes(status)) throw new Error("Select a valid review status.");
   await runTransaction(db, async (transaction) => {
     const [application, profile] = await Promise.all([
       transaction.get(doctorRef(uid)), transaction.get(userRef(uid)),

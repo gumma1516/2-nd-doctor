@@ -1,7 +1,7 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
-import { getStorage } from "firebase/storage";
+import { connectAuthEmulator, getAuth } from "firebase/auth";
+import { connectFirestoreEmulator, getFirestore } from "firebase/firestore";
+import { connectStorageEmulator, getStorage } from "firebase/storage";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -20,9 +20,21 @@ if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
 }
 
 // Initialize Firebase only if it hasn't been initialized already
-const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+const isNewApp = getApps().length === 0;
+const app = isNewApp ? initializeApp(firebaseConfig) : getApp();
 
 export const auth = getAuth(app);
 // Export Firestore database instance
 export const db = getFirestore(app);
 export const storage = getStorage(app);
+
+// Explicit demo projects only: never redirect a real project's requests to emulators.
+if (isNewApp && process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATORS === "true") {
+  if (!firebaseConfig.projectId.startsWith("demo-") ||
+      (typeof window !== "undefined" && !["localhost", "127.0.0.1"].includes(window.location.hostname))) {
+    throw new Error("Firebase emulators require a demo-* project and a localhost origin.");
+  }
+  connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });
+  connectFirestoreEmulator(db, "127.0.0.1", 8080);
+  connectStorageEmulator(storage, "127.0.0.1", 9199);
+}

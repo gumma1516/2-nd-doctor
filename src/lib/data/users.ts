@@ -15,7 +15,8 @@ import {
   type Unsubscribe,
 } from "firebase/firestore";
 import type { User } from "firebase/auth";
-import { db } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
+import { normalizeProfile } from "@/lib/auth/profile-input";
 import { DEFAULT_SETTINGS, type SelfServiceRole, type UserProfile, type UserSettings } from "./types";
 
 const userRef = (uid: string) => doc(db, "users", uid);
@@ -48,15 +49,14 @@ export type NewUserInput = {
 /** Creates the profile for the signed-in user. UID and email come from the auth token, never from form input. */
 export function newUserProfileData(user: User, input: NewUserInput, doctorAccess: UserProfile["doctorAccess"] = null) {
   if (!user.email) throw new Error("Signed-in account has no email.");
+  if (!user.emailVerified) throw new Error("Verify your email before creating an account.");
+  const normalized = normalizeProfile({ ...input, dob: input.dob ?? null, place: input.place ?? null }, input.role === "patient");
   return {
     uid: user.uid,
     email: user.email,
     role: input.role,
     doctorAccess,
-    fullName: input.fullName.trim(),
-    phone: input.phone,
-    dob: input.dob ?? null,
-    place: input.place?.trim() || null,
+    ...normalized,
     photoURL: null,
     photoPath: null,
     status: "active",
@@ -90,7 +90,9 @@ export type ProfilePatch = Partial<Pick<UserProfile, "fullName" | "phone" | "dob
 };
 
 export async function updateUserProfile(uid: string, patch: ProfilePatch) {
+  if (auth.currentUser?.uid !== uid) throw new Error("You can only edit your own profile.");
   await updateDoc(userRef(uid), { ...patch, updatedAt: serverTimestamp() });
+  await logAudit(uid, "profile_updated");
 }
 
 export async function touchLastLogin(uid: string) {
@@ -134,4 +136,17 @@ export async function listMyAudit(uid: string, max = 10): Promise<AuditEntry[]> 
 export async function adminListUsers(): Promise<UserProfile[]> {
   const snap = await getDocs(collection(db, "users"));
   return snap.docs.map((d) => d.data() as UserProfile);
+}
+
+/** The rules independently enforce the caller's admin role and protect admin accounts. */
+export async function adminSetUserStatus(uid: string, status: UserProfile["status"]) {
+  if (!auth.currentUser || auth.currentUser.uid === uid) throw new Error("You cannot change your own account status here.");
+  if (status !== "active" && status !== "disabled") throw new Error("Select a valid account status.");
+  await runTransaction(db, async (transaction) => {
+    const snapshot = await transaction.get(userRef(uid));
+    if (!snapshot.exists()) throw new Error("Account not found.");
+    const profile = snapshot.data() as UserProfile;
+    if (profile.role !== "patient" && profile.role !== "doctor") throw new Error("Admin accounts cannot be changed here.");
+    transaction.update(userRef(uid), { status, updatedAt: serverTimestamp() });
+  });
 }

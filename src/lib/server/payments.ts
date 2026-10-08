@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { FieldValue } from "firebase-admin/firestore";
 import { adminBucket, adminDb } from "./firebase-admin";
 import { HttpError } from "./http";
+import { assignCase } from "./assignment";
 import { capturedPaymentMatches, CONSULTATION_AMOUNT_PAISE, PAYMENT_CURRENCY, type GatewayOrder, type GatewayPayment } from "./payment-validation";
 
 export function gatewayConfig() {
@@ -55,6 +56,8 @@ export async function markCaptured(caseId: string, paymentId: string, expectedOr
     if (data.status !== "AWAITING_PAYMENT" || data.paymentStatus !== "PENDING") throw new HttpError(409, "Consultation cannot accept payment.");
     transaction.update(reference, { status: "IN_REVIEW", paymentStatus: "PAID", paymentId, paidAt: FieldValue.serverTimestamp() });
   });
+  // Retry assignment even when a previous webhook already recorded payment.
+  await assignCase(caseId);
 }
 
 export async function createOrder(uid: string, caseId: string) {
@@ -66,8 +69,11 @@ export async function createOrder(uid: string, caseId: string) {
     const bucket = adminBucket();
     const allowed = ["application/pdf", "image/jpeg", "image/png", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
     let totalSize = 0;
+    const uniquePaths = new Set<string>();
     await Promise.all(files.map(async (file) => {
-      if (typeof file.path !== "string" || !file.path.startsWith(`users/${uid}/cases/${caseId}/`) || file.path.includes("..")) throw new HttpError(409, "Invalid report attachment.");
+      const prefix = `users/${uid}/cases/${caseId}/`;
+      if (!file || typeof file.path !== "string" || !file.path.startsWith(prefix) || file.path.slice(prefix.length).includes("/") || file.path.includes("..") || uniquePaths.has(file.path)) throw new HttpError(409, "Invalid report attachment.");
+      uniquePaths.add(file.path);
       const [metadata] = await bucket.file(file.path).getMetadata();
       const size = Number(metadata.size);
       if (!allowed.includes(metadata.contentType ?? "") || !Number.isFinite(size) || size <= 0 || size > 50 * 1024 ** 2 || size !== file.size || metadata.contentType !== file.contentType) {
@@ -92,7 +98,10 @@ export async function createOrder(uid: string, caseId: string) {
     transaction.set(lock, { lease, expiresAt: Date.now() + 60000 });
     return null;
   });
-  if (existing?.paid) return { paid: true, caseId };
+  if (existing?.paid) {
+    await assignCase(caseId);
+    return { paid: true, caseId };
+  }
   let orderId = existing?.orderId;
   if (!orderId) {
     try {
@@ -115,13 +124,17 @@ export async function createOrder(uid: string, caseId: string) {
     }
   }
   const order = await gateway<GatewayOrder>(`orders/${encodeURIComponent(orderId)}`);
-  if (order.status === "paid") {
+  if (order.id !== orderId || order.amount !== CONSULTATION_AMOUNT_PAISE || order.currency !== PAYMENT_CURRENCY) throw new HttpError(409, "Payment amount does not match the consultation.");
+  if (order.status === "paid" || order.status === "attempted") {
     const payments = await gateway<{ items: GatewayPayment[] }>(`orders/${encodeURIComponent(orderId)}/payments`);
     const payment = payments.items.find((entry) => entry.status === "captured");
-    if (!payment) throw new HttpError(409, "Payment confirmation is pending. Please check again shortly.");
-    await markCaptured(caseId, payment.id, orderId);
-    return { paid: true, caseId };
+    if (payment) {
+      await markCaptured(caseId, payment.id, orderId);
+      return { paid: true, caseId };
+    }
+    if (order.status === "paid" || payments.items.some((entry) => entry.status === "authorized" || entry.status === "created")) {
+      throw new HttpError(409, "Payment confirmation is pending. Check again shortly; do not make another payment.");
+    }
   }
-  if (order.amount !== CONSULTATION_AMOUNT_PAISE || order.currency !== PAYMENT_CURRENCY) throw new HttpError(409, "Payment amount does not match the consultation.");
   return { paid: false, caseId, keyId, orderId, amount: CONSULTATION_AMOUNT_PAISE, currency: PAYMENT_CURRENCY };
 }

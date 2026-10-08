@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ShieldAlert, CheckCircle2 } from "lucide-react";
 import { FileDropzone, type UploadItem } from "@/components/FileDropzone";
@@ -44,6 +44,7 @@ export default function DoctorOnboarding() {
   const [submitted, setSubmitted] = useState(false);
   const [check, setCheck] = useState<{ uid: string; error: string | null } | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const saving = useRef(false);
 
   useEffect(() => {
     if (authLoading || authError) return;
@@ -51,7 +52,7 @@ export default function DoctorOnboarding() {
       router.replace("/doctor/login");
       return;
     }
-    if (profile && profile.role !== "doctor") {
+    if (profile && (profile.role !== "doctor" || profile.status !== "active")) {
       router.replace(homeFor(profile.role));
       return;
     }
@@ -85,13 +86,13 @@ export default function DoctorOnboarding() {
 
   const validate = (): Errors => {
     const e: Errors = {};
-    if (form.fullName.trim().length < 3) e.fullName = "Enter your full name.";
+    if (form.fullName.trim().length < 3 || form.fullName.trim().length > 120) e.fullName = "Enter your full name (3-120 characters).";
     if (!INDIAN_PHONE_REGEX.test(form.phone.replace(/[\s-]/g, ""))) e.phone = "Enter a valid 10-digit mobile number.";
     if (!REG_NUMBER_REGEX.test(form.regNumber.trim())) e.regNumber = "Enter a valid registration number.";
-    if (!form.council.trim()) e.council = "Enter the issuing medical council.";
-    if (!form.specialization) e.specialization = "Select your specialization.";
+    if (form.council.trim().length < 2 || form.council.trim().length > 120) e.council = "Enter the issuing medical council (2-120 characters).";
+    if (!SPECIALTIES.includes(form.specialization as Specialty)) e.specialization = "Select your specialization.";
     const exp = Number(form.experience);
-    if (!form.experience || Number.isNaN(exp) || exp < 0 || exp > 60) e.experience = "Enter years of experience (0-60).";
+    if (!form.experience || !Number.isInteger(exp) || exp < 0 || exp > 60) e.experience = "Enter whole years of experience (0-60).";
     if (files.length === 0) e.files = "Upload your degree and registration certificate.";
     if (!declaration) e.declaration = "You must confirm the declaration.";
     return e;
@@ -99,7 +100,7 @@ export default function DoctorOnboarding() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || authError || (profile && profile.role !== "doctor")) return;
+    if (!user || authError || saving.current || (profile && (profile.role !== "doctor" || profile.status !== "active"))) return;
     
     const found = validate();
     setErrors(found);
@@ -108,6 +109,7 @@ export default function DoctorOnboarding() {
       return;
     }
     
+    saving.current = true;
     setLoading(true);
     try {
       const actualFiles = files.map(f => f.file);
@@ -127,6 +129,7 @@ export default function DoctorOnboarding() {
     } catch (err) {
       setErrors({ declaration: err instanceof Error ? err.message : "Failed to submit application. Please try again." });
     } finally {
+      saving.current = false;
       setLoading(false);
     }
   };
@@ -140,15 +143,15 @@ export default function DoctorOnboarding() {
 
   if (submitted) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-zinc-950 py-12 px-4">
+      <div className="flex-1 flex items-center justify-center py-12 px-4">
         <Card className="max-w-md w-full p-10 text-center">
           <div className="size-20 rounded-full bg-teal-500/10 border border-teal-500/20 text-teal-400 mx-auto flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(20,184,166,0.25)]">
             <CheckCircle2 className="size-10" aria-hidden />
           </div>
-          <h1 className="text-2xl font-bold text-white mb-3">Application Submitted</h1>
+          <h1 className="text-2xl font-medium tracking-tight text-white mb-3">Application Submitted</h1>
           <p className="text-zinc-400 mb-8">
-            Thank you, {form.fullName ? form.fullName.split(" ").slice(0, 2).join(" ") : (profile?.fullName || "Doctor")}. Our team will verify your credentials within
-            2-3 working days. Check your dashboard for the review outcome.
+            Thank you, {form.fullName ? form.fullName.split(" ").slice(0, 2).join(" ") : (profile?.fullName || "Doctor")}. Your credentials are awaiting administrator review.
+            You can review assigned consultations after verification. Check your dashboard for the review outcome.
           </p>
           <Link href="/doctor/dashboard" id="doctor-register-home-link" className="text-teal-400 hover:text-teal-300 font-medium">
             View dashboard
@@ -161,13 +164,13 @@ export default function DoctorOnboarding() {
   const errorCount = Object.values(errors).filter(Boolean).length;
 
   return (
-    <div className="flex-1 flex items-center justify-center bg-zinc-950 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="flex-1 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
       <Card className="max-w-2xl w-full md:p-12">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center size-12 rounded-full bg-teal-500/10 border border-teal-500/20 text-teal-400 mb-4 shadow-[0_0_15px_rgba(20,184,166,0.15)]">
+          <div className="icon-tile mb-5">
             <ShieldAlert className="size-6" aria-hidden />
           </div>
-          <h1 className="text-2xl font-bold text-white">Apply as a Specialist</h1>
+          <h1 className="text-2xl font-medium tracking-tight text-white">Apply as a Specialist</h1>
           <p className="text-sm text-zinc-400 mt-2">Join our network of verified medical experts.</p>
         </div>
 
@@ -222,8 +225,10 @@ export default function DoctorOnboarding() {
             </div>
           </div>
 
-          <div>
-            <label className="flex items-start gap-3 cursor-pointer">
+          <div className="bg-zinc-900/50 p-5 rounded-xl border border-zinc-800 space-y-4">
+            <h3 className="text-white font-semibold">Oath-Gated Access & Ethical Principles</h3>
+            <p className="text-sm text-zinc-400">Before joining SecondCare as a clinical decision-maker, you must commit to the following principles:</p>
+            <label className="flex items-start gap-3 cursor-pointer mt-2">
               <input
                 id="doc-declaration"
                 type="checkbox"
@@ -232,15 +237,12 @@ export default function DoctorOnboarding() {
                   setDeclaration(e.target.checked);
                   if (e.target.checked) setErrors((p) => ({ ...p, declaration: undefined }));
                 }}
-                className="mt-1 size-4 accent-teal-500"
+                className="mt-1 size-4 accent-teal-500 shrink-0"
               />
-              <span className="text-sm text-zinc-400">
-                I declare that the information provided is true and that I hold a valid registration to practise
-                medicine in India. I agree to the{" "}
-                <Link href="/terms" target="_blank" className="text-teal-400 hover:underline">
-                  Terms of Service
-                </Link>
-                .
+              <span className="text-sm text-zinc-300 leading-relaxed">
+                <strong>Do No Harm & Pursuit of Truth:</strong> I will prioritize human safety, strive for accuracy, and acknowledge the limits of AI-assisted decision support.<br/>
+                <span className="block mt-2"><strong>Data Sanctity & Human Agency:</strong> I will guard patient confidentiality and ensure that I remain the ultimate arbiter of truth, using AI as a tool, not a replacement for my clinical judgment.</span>
+                <span className="block mt-2 text-zinc-400">I declare that my information is true, I hold a valid medical registration, and I agree to the <Link href="/terms" target="_blank" className="text-teal-400 hover:underline">Terms of Service</Link>.</span>
               </span>
             </label>
             {errors.declaration && (

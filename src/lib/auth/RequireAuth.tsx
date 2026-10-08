@@ -11,7 +11,7 @@ import type { Role } from "@/lib/data/types";
 
 export function FullPageLoader({ label = "Loading…" }: { label?: string }) {
   return (
-    <div className="flex-1 flex items-center justify-center gap-3 bg-zinc-950 text-zinc-500 py-24" role="status">
+    <div className="flex-1 flex items-center justify-center gap-3 text-zinc-400 py-24" role="status">
       <Loader2 className="size-5 animate-spin" aria-hidden /> {label}
     </div>
   );
@@ -23,7 +23,7 @@ export function AuthError() {
   const { error, retry, logout } = useAuth();
   const [signOutError, setSignOutError] = useState<string | null>(null);
   return (
-    <div className="flex-1 flex items-center justify-center bg-zinc-950 px-4 py-24">
+    <div className="flex-1 flex items-center justify-center px-4 py-24">
       <Card className="max-w-md text-center space-y-4">
         <h1 className="text-xl font-bold text-white">Unable to load your account</h1>
         <p role="alert" className="text-zinc-400">{signOutError ?? error}</p>
@@ -39,7 +39,8 @@ export function AuthError() {
  * storage.rules, which reject any request not made by the data's owner.
  */
 export function RequireAuth({ role, children }: { role?: Role; children: React.ReactNode }) {
-  const { user, profile, loading, error } = useAuth();
+  const { user, profile, loading, error, logout } = useAuth();
+  const [logoutError, setLogoutError] = useState<string | null>(null);
   const router = useRouter();
 
   let target: string | null = null;
@@ -58,11 +59,13 @@ export function RequireAuth({ role, children }: { role?: Role; children: React.R
 
   if (profile?.status !== "active") {
     return (
-      <div className="flex-1 flex items-center justify-center bg-zinc-950 py-12 px-4">
+      <div className="flex-1 flex items-center justify-center py-12 px-4">
         <Card className="max-w-md w-full text-center">
           <ShieldOff className="size-10 text-red-400 mx-auto mb-4" aria-hidden />
           <h1 className="text-xl font-bold text-white mb-2">Account disabled</h1>
           <p className="text-zinc-400 mb-6">Your account has been disabled. Contact support for help.</p>
+          {logoutError && <p role="alert" className="text-red-400 mb-4">{logoutError}</p>}
+          <Button variant="secondary" className="mb-4" onClick={() => void logout().catch(() => setLogoutError("Could not sign out. Please try again."))}>Sign out</Button>
           <Link href="/" className="text-brand-400 hover:text-brand-300 font-medium">Back to home</Link>
         </Card>
       </div>

@@ -2,6 +2,7 @@
 
 import { useId, useRef, useState } from "react";
 import { UploadCloud, X, File as FileIcon } from "lucide-react";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/cn";
 
 export type UploadItem = { id: string; file: File };
@@ -43,6 +44,7 @@ export function FileDropzone({
   helper,
   error,
 }: Props) {
+  const reduced = useReducedMotion();
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [rejections, setRejections] = useState<string[]>([]);
@@ -84,7 +86,8 @@ export function FileDropzone({
 
   const remove = (itemId: string) => onChange(items.filter((i) => i.id !== itemId));
 
-  const accentText = accent === "brand" ? "text-brand-400" : "text-teal-400";
+  const totalSize = items.reduce((sum, item) => sum + item.file.size, 0);
+  const accentText = accent === "brand" ? "text-brand-200" : "text-teal-400";
   const accentBorder = accent === "brand" ? "border-brand-500 bg-brand-500/5" : "border-teal-500 bg-teal-500/5";
 
   return (
@@ -112,14 +115,14 @@ export function FileDropzone({
           if (e.dataTransfer.files?.length) addFiles(e.dataTransfer.files);
         }}
         className={cn(
-          "flex justify-center px-6 pt-10 pb-12 border-2 border-dashed rounded-2xl transition-colors cursor-pointer bg-zinc-950/50 hover:bg-zinc-800/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500",
+          "flex justify-center px-5 py-9 border border-dashed rounded-2xl transition-colors cursor-pointer bg-zinc-950/35 hover:bg-brand-300/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300",
           dragging ? accentBorder : error ? "border-red-500/60" : "border-zinc-800"
         )}
       >
         <div className="space-y-2 text-center flex flex-col items-center pointer-events-none">
           <div
             className={cn(
-              "size-16 rounded-full flex items-center justify-center mb-2 border transition-transform",
+              "size-14 rounded-2xl flex items-center justify-center mb-2 border transition-transform",
               accent === "brand" ? "bg-brand-500/10 border-brand-500/20" : "bg-teal-500/10 border-teal-500/20",
               accentText,
               dragging && "scale-110"
@@ -132,9 +135,9 @@ export function FileDropzone({
           </p>
           <p id={descId} className="text-sm text-zinc-500">
             {limits.accept.map((a) => a.slice(1).toUpperCase()).join(", ")} · up to {limits.maxFileSizeMB} MB each ·
-            max {limits.maxFiles} files
+            max {limits.maxFiles} files · {limits.maxTotalSizeMB} MB total
           </p>
-          {helper && <p className="text-xs text-zinc-600 max-w-xs mt-2">{helper}</p>}
+          {helper && <p className="text-xs text-zinc-400 max-w-sm leading-relaxed mt-2">{helper}</p>}
         </div>
         <input
           ref={inputRef}
@@ -164,31 +167,39 @@ export function FileDropzone({
 
       {items.length > 0 && (
         <div className="mt-6 space-y-3">
-          <h4 className="text-sm font-medium text-zinc-400">Selected files ({items.length})</h4>
-          <ul className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {items.map(({ id: itemId, file }) => (
-              <li
-                key={itemId}
-                className="flex items-center justify-between gap-3 p-3 rounded-xl bg-zinc-950 border border-zinc-800"
-              >
-                <div className="flex items-center gap-3 overflow-hidden">
-                  <FileIcon className={cn("size-5 shrink-0", accentText)} aria-hidden />
-                  <div className="min-w-0">
-                    <p className="text-sm text-zinc-300 truncate">{file.name}</p>
-                    <p className="text-xs text-zinc-600">{formatSize(file.size)}</p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  aria-label={`Remove ${file.name}`}
-                  onClick={() => remove(itemId)}
-                  className="p-1 hover:bg-zinc-800 rounded-lg text-zinc-500 hover:text-red-400 transition-colors cursor-pointer"
+          <p role="status" aria-live="polite" className="text-xs text-zinc-400">{items.length} file{items.length === 1 ? "" : "s"} selected · {formatSize(totalSize)} total</p>
+          <motion.ul layout={!reduced} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <AnimatePresence>
+              {items.map(({ id: itemId, file }) => (
+                <motion.li
+                  layout={!reduced}
+                  initial={reduced ? false : { opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.95 }}
+                  whileHover={reduced ? undefined : { scale: 1.01 }}
+                  transition={{ duration: 0.2 }}
+                  key={itemId}
+                  className="flex items-center justify-between gap-3 p-3 rounded-xl bg-zinc-950 border border-zinc-800"
                 >
-                  <X className="size-4" />
-                </button>
-              </li>
-            ))}
-          </ul>
+                  <div className="flex items-center gap-3 overflow-hidden">
+                    <FileIcon className={cn("size-5 shrink-0", accentText)} aria-hidden />
+                    <div className="min-w-0">
+                      <p className="text-sm text-zinc-300 truncate">{file.name}</p>
+                      <p className="text-xs text-zinc-400">{formatSize(file.size)}</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${file.name}`}
+                    onClick={() => remove(itemId)}
+                    className="size-11 shrink-0 inline-flex items-center justify-center hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-red-300 transition-colors cursor-pointer"
+                  >
+                    <X className="size-4" />
+                  </button>
+                </motion.li>
+              ))}
+            </AnimatePresence>
+          </motion.ul>
         </div>
       )}
     </div>

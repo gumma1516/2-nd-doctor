@@ -1,7 +1,17 @@
 import type { Metadata, Viewport } from "next";
+import localFont from "next/font/local";
 import { SITE_URL } from "@/lib/constants";
 import { AuthProvider } from "@/lib/auth/AuthProvider";
+import { FloatingBackground } from "@/components/FloatingBackground";
 import "./globals.css";
+
+const geist = localFont({
+  src: "./fonts/GeistSans.woff2",
+  display: "swap",
+  variable: "--font-geist-sans",
+  weight: "100 900",
+});
+const geistMono = localFont({ src: "./fonts/GeistMono.woff2", display: "swap", variable: "--font-geist-mono", weight: "100 900" });
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -23,7 +33,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#09090b",
+  themeColor: "#080c12",
   colorScheme: "dark",
 };
 
@@ -33,8 +43,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en-IN" className="dark">
-      <body className="font-sans min-h-screen flex flex-col antialiased bg-zinc-950 text-zinc-50 selection:bg-brand-500 selection:text-white">
+    <html lang="en-IN" className="dark" data-scroll-behavior="smooth">
+      <body className={`${geist.variable} ${geistMono.variable} relative isolate min-h-screen flex flex-col font-sans antialiased`}>
+        <FloatingBackground />
+        <noscript><style>{"[data-reveal], [data-page-transition] { opacity: 1 !important; transform: none !important; }"}</style></noscript>
         <AuthProvider>
           {children}
         </AuthProvider>

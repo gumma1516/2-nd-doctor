@@ -1,4 +1,4 @@
-import { deleteObject, getBlob, getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import { deleteObject, getBlob, getDownloadURL, ref, uploadBytesResumable } from "firebase/storage";
 import { auth, storage } from "@/lib/firebase";
 import { DOCTOR_UPLOAD, PATIENT_UPLOAD } from "@/lib/constants";
 import type { StoredFile } from "./types";
@@ -36,12 +36,23 @@ export async function uploadUserFiles(uid: string, folder: string, files: File[]
   try {
     for (const { file, contentType } of prepared) {
       const path = `users/${uid}/${folder}/${crypto.randomUUID()}-${safeName(file.name)}`;
-      await uploadBytes(ref(storage, path), file, { contentType });
+      // Cancel the actual upload on timeout; racing an uncancelled promise can leave orphan reports.
+      const task = uploadBytesResumable(ref(storage, path), file, { contentType });
+      let timedOut = false;
+      const timeout = setTimeout(() => { timedOut = true; task.cancel(); }, 120000);
+      try {
+        await task;
+      } catch (error) {
+        if (timedOut) throw new Error("The file upload timed out. Check your connection and retry; your selected reports are retained.");
+        throw error;
+      } finally {
+        clearTimeout(timeout);
+      }
       uploaded.push({ name: file.name, path, size: file.size, contentType });
     }
     return uploaded;
   } catch (error) {
-    await deleteUserFiles(uploaded);
+    await deleteUserFiles(uploaded).catch(() => undefined);
     throw error;
   }
 }

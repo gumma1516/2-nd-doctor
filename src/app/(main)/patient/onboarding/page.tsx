@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { User, ArrowRight } from "lucide-react";
 import { Alert, Button, Card, Field, Input } from "@/components/ui";
-import { INDIAN_PHONE_REGEX } from "@/lib/constants";
+import { normalizeProfile } from "@/lib/auth/profile-input";
 import { useAuth } from "@/lib/auth/AuthProvider";
 import { createUserProfile } from "@/lib/data/users";
 import { getMyDoctorProfile } from "@/lib/data/doctors";
@@ -25,6 +25,7 @@ export default function PatientOnboarding() {
   const [form, setForm] = useState<FormState>({ name: "", dob: "", place: "", phone: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const saving = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -51,31 +52,21 @@ export default function PatientOnboarding() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || profile || authError) return;
-    
-    if (form.name.trim().length < 3) return setError("Enter a valid name.");
-    if (!form.dob) return setError("Enter your date of birth.");
-    if (!Number.isFinite(Date.parse(form.dob)) || new Date(form.dob).getTime() > Date.now()) return setError("Enter a valid date of birth in the past.");
-    if (form.place.trim().length < 2) return setError("Enter your city/place.");
-    
-    const normalized = form.phone.replace(/[\s-]/g, "");
-    if (!INDIAN_PHONE_REGEX.test(normalized)) {
-      return setError("Enter a valid 10-digit Indian mobile number.");
-    }
-
+    if (!user || profile || authError || saving.current) return;
+    saving.current = true;
     setLoading(true);
+    setError(null);
     try {
+      const normalized = normalizeProfile({ fullName: form.name, phone: form.phone, dob: form.dob, place: form.place }, true);
       await createUserProfile(user, {
         role: "patient",
-        fullName: form.name.trim(),
-        phone: normalized,
-        dob: form.dob,
-        place: form.place,
+        ...normalized,
       });
       // The auth listener will pick up the new profile and redirect
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create profile. Please try again.");
     } finally {
+      saving.current = false;
       setLoading(false);
     }
   };
@@ -84,13 +75,13 @@ export default function PatientOnboarding() {
   if (authLoading || !user || profile) return <FullPageLoader />;
 
   return (
-    <div className="flex-1 flex items-center justify-center bg-zinc-950 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="flex-1 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
       <Card className="max-w-md w-full">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center size-12 rounded-full bg-brand-500/10 border border-brand-500/20 text-brand-400 mb-4 shadow-[0_0_15px_rgba(37,99,235,0.15)]">
+          <div className="icon-tile mb-5">
             <User className="size-6" aria-hidden />
           </div>
-          <h1 className="text-2xl font-bold text-white">Complete Your Profile</h1>
+          <h1 className="text-2xl font-medium tracking-tight text-white">Complete Your Profile</h1>
           <p className="text-sm text-zinc-400 mt-2">Just a few more details to get started</p>
         </div>
 
@@ -98,15 +89,15 @@ export default function PatientOnboarding() {
           {error && <Alert>{error}</Alert>}
 
           <Field id="pat-name" label="Full Name">
-            <Input id="pat-name" accent="brand" value={form.name} onChange={update("name")} placeholder="John Doe" required />
+            <Input id="pat-name" accent="brand" autoComplete="name" maxLength={120} value={form.name} onChange={update("name")} placeholder="John Doe" required />
           </Field>
           
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field id="pat-dob" label="Date of Birth">
-              <Input id="pat-dob" accent="brand" type="date" value={form.dob} onChange={update("dob")} required />
+              <Input id="pat-dob" accent="brand" type="date" min="1900-01-01" autoComplete="bday" value={form.dob} onChange={update("dob")} required />
             </Field>
             <Field id="pat-place" label="City / Place">
-              <Input id="pat-place" accent="brand" value={form.place} onChange={update("place")} placeholder="Mumbai" required />
+              <Input id="pat-place" accent="brand" autoComplete="address-level2" maxLength={120} value={form.place} onChange={update("place")} placeholder="Mumbai" required />
             </Field>
           </div>
 

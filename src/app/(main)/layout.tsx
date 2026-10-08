@@ -1,49 +1,29 @@
 import Link from "next/link";
-import { AccountNav } from "@/lib/auth/AccountNav";
+import { ShieldCheck, ArrowUpRight } from "lucide-react";
+import { SiteHeader } from "@/components/SiteHeader";
+import { BrandLogo } from "@/components/BrandLogo";
+import { PageTransition } from "@/components/PageTransition";
 
-export default function MainLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
-  return (
-    <>
-      <a
-        href="#main-content"
-        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:bg-brand-600 focus:text-white focus:px-4 focus:py-2 focus:rounded-lg"
-      >
-        Skip to content
-      </a>
-      <header className="sticky top-0 z-50 w-full border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-md">
-        <div className="container mx-auto px-4 h-16 flex items-center justify-between gap-4">
-          <Link href="/" className="flex items-center gap-2" aria-label="SecondCare home">
-            <div className="size-8 rounded-lg bg-brand-600 flex items-center justify-center shadow-inner">
-              <svg className="size-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-              </svg>
-            </div>
-            <span className="text-xl font-bold tracking-tight text-white">SecondCare</span>
-          </Link>
-          <nav aria-label="Primary" className="hidden md:flex items-center gap-8 text-sm font-medium text-zinc-400">
-            <Link href="/#how-it-works" className="hover:text-brand-400 transition-colors">How it Works</Link>
-            <Link href="/#specialists" className="hover:text-brand-400 transition-colors">Specialties</Link>
-            <Link href="/#pricing" className="hover:text-brand-400 transition-colors">Pricing</Link>
-          </nav>
-          <AccountNav />
-        </div>
-      </header>
-      <main id="main-content" className="flex-1 flex flex-col">
-        {children}
-      </main>
-      <footer className="border-t border-zinc-800 bg-zinc-950 py-12 mt-auto">
-        <div className="container mx-auto px-4 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-zinc-500">
-          <p>&copy; {new Date().getFullYear()} SecondCare. All rights reserved.</p>
-          <nav aria-label="Legal" className="flex items-center gap-6">
-            <Link href="/privacy" id="footer-privacy-link" className="hover:text-zinc-300 transition-colors">Privacy Policy</Link>
-            <Link href="/terms" id="footer-terms-link" className="hover:text-zinc-300 transition-colors">Terms of Service</Link>
+export default function MainLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  return <>
+    <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[100] focus:bg-brand-200 focus:text-brand-950 focus:px-4 focus:py-3 focus:rounded-xl">Skip to content</a>
+    <SiteHeader />
+    <main id="main-content" className="flex-1 flex flex-col"><PageTransition>{children}</PageTransition></main>
+    <footer className="border-t border-white/8 mt-auto">
+      <div className="page-shell py-12">
+        <div className="flex flex-col sm:flex-row justify-between gap-10 mb-10">
+          <div className="max-w-sm"><BrandLogo /><p className="text-sm text-zinc-400 leading-relaxed mt-4">A clearer perspective on your health.<br />Specialist expertise, in one private workspace.</p></div>
+          <nav aria-label="Footer" className="flex flex-wrap gap-x-12 gap-y-6 text-sm">
+            <div className="flex flex-col gap-3"><span className="text-xs text-zinc-500">Your next step</span><Link className="nav-link" href="/patient/register">Get a second opinion</Link><Link className="nav-link" href="/doctor/register">Join as a specialist <ArrowUpRight className="inline size-3.5" aria-hidden /></Link></div>
+            <div className="flex flex-col gap-3"><span className="text-xs text-zinc-500">Useful links</span><Link className="nav-link" href="/#how-it-works">How it works</Link><Link className="nav-link" href="/#pricing">Consultation pricing</Link></div>
           </nav>
         </div>
-      </footer>
-    </>
-  );
+        <div className="border-t border-white/8 pt-6 flex flex-col md:flex-row justify-between gap-5 text-xs text-zinc-500">
+          <p>© {new Date().getFullYear()} SecondCare. All rights reserved.</p>
+          <span className="inline-flex items-center gap-2"><ShieldCheck className="size-3.5 text-brand-300" aria-hidden /> Medical records stay in your private workspace</span>
+          <nav aria-label="Legal" className="flex items-center gap-5"><Link href="/privacy" id="footer-privacy-link" className="hover:text-white">Privacy</Link><Link href="/terms" id="footer-terms-link" className="hover:text-white">Terms</Link></nav>
+        </div>
+      </div>
+    </footer>
+  </>;
 }

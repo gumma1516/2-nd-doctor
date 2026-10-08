@@ -7,7 +7,7 @@ import type { User } from "firebase/auth";
 import { Loader2 } from "lucide-react";
 import { Alert, Button, Card, Field, Input } from "@/components/ui";
 import { EMAIL_REGEX, isLoginLink, completeLoginLink, getPendingEmail, getPendingIntent, homeFor } from "@/lib/auth/email-link";
-import { getUserProfile } from "@/lib/data/users";
+import { getUserProfile, logAudit, touchLastLogin } from "@/lib/data/users";
 
 export default function AuthFinishPage() {
   const router = useRouter();
@@ -16,17 +16,23 @@ export default function AuthFinishPage() {
   const [error, setError] = useState("");
   const handled = useRef(false);
   const signedIn = useRef<User | null>(null);
-  const emailUsed = useRef("");
+  const [emailUsed, setEmailUsed] = useState("");
+  const [hasCredential, setHasCredential] = useState(false);
 
   const processLogin = useCallback(async (email: string, url: string) => {
     setStatus("loading");
-    emailUsed.current = email;
+    setEmailUsed(email);
     try {
       const intent = getPendingIntent(url);
       // Keep the successful credential while retrying a failed profile lookup; links are single-use.
       const user = signedIn.current ?? await completeLoginLink(email, url, intent?.remember ?? false);
       signedIn.current = user;
+      setHasCredential(true);
       const profile = await getUserProfile(user.uid);
+      if (profile?.status === "active") {
+        void touchLastLogin(user.uid).catch(() => undefined);
+        void logAudit(user.uid, "login");
+      }
       router.replace(profile ? homeFor(profile.role) : intent ? `/${intent.role}/onboarding` : "/auth/onboarding");
     } catch (error) {
       setStatus("error");
@@ -56,7 +62,7 @@ export default function AuthFinishPage() {
   };
 
   return (
-    <div className="flex-1 flex items-center justify-center bg-zinc-950 py-12 px-4">
+    <div className="flex-1 flex items-center justify-center py-12 px-4">
       <Card className="max-w-md w-full text-center space-y-6">
         {status === "loading" && <div role="status" className="space-y-4">
           <Loader2 className="size-10 animate-spin text-brand-500 mx-auto" aria-hidden />
@@ -65,7 +71,8 @@ export default function AuthFinishPage() {
         {status === "error" && <>
           <h1 className="text-xl font-semibold text-white">Sign in needs attention</h1>
           <Alert>{error}</Alert>
-          {emailUsed.current && <Button onClick={() => void processLogin(emailUsed.current, window.location.href)}>Try again</Button>}
+          {emailUsed && <Button onClick={() => void processLogin(emailUsed, window.location.href)}>Try again</Button>}
+          {!hasCredential && <Button variant="secondary" onClick={() => { setEmailInput(""); setStatus("email-required"); setError(""); }}>Confirm a different email</Button>}
           <Link href="/login" className="block text-brand-400 hover:text-brand-300">Request a new sign-in link</Link>
         </>}
         {status === "email-required" && <form onSubmit={handleEmailSubmit} className="space-y-4">

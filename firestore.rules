@@ -63,7 +63,8 @@ service cloud.firestore {
         && (p.photoURL == null || text(p.photoURL,1,2000));
     }
     match /users/{uid} {
-      allow get: if signedIn() && ((request.auth.uid == uid && (!exists(userPath(uid)) || active())) || admin());
+      // Owners may inspect their account status after disable/revocation; all medical data still requires active().
+      allow get: if signedIn() && (request.auth.uid == uid || admin());
       allow list: if admin();
       allow create: if signedIn() && request.auth.uid == uid
         && request.resource.data.keys().hasOnly(['uid','email','role','fullName','phone','dob','place','photoURL','photoPath','status','isVerified','settings','sessionsRevokedAt','createdAt','updatedAt','lastLogin','doctorAccess'])
@@ -91,6 +92,9 @@ service cloud.firestore {
           && request.resource.data.doctorAccess.status == 'PENDING'
           && getAfter(doctorPath(uid)).data.status == 'PENDING'
           && request.resource.data.doctorAccess.specialization == getAfter(doctorPath(uid)).data.specialization)
+        || (admin() && resource.data.role in ['patient','doctor'] && uid != request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','updatedAt'])
+          && request.resource.data.status in ['active','disabled'] && request.resource.data.updatedAt == request.time)
         || (admin() && resource.data.role == 'doctor'
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['doctorAccess','updatedAt'])
           && request.resource.data.doctorAccess.keys().hasOnly(['status','specialization'])
@@ -138,29 +142,29 @@ service cloud.firestore {
     }
     function doctorCanRead(c) {
       return doctorFor(c.department) && c.paymentStatus == 'PAID'
-        && (c.status == 'IN_REVIEW' || (c.status == 'COMPLETED' && c.doctorId == request.auth.uid));
+        && c.doctorId == request.auth.uid && c.status in ['IN_REVIEW','COMPLETED'];
     }
     match /cases/{id} {
       allow get: if active() && ((!exists(/databases/$(database)/documents/cases/$(id)) && patient())
         || resource.data.ownerId == request.auth.uid || admin() || doctorCanRead(resource.data));
       allow list: if active() && (resource.data.ownerId == request.auth.uid || admin() || doctorCanRead(resource.data));
       allow create: if patient() && request.resource.data.ownerId == request.auth.uid
-        && request.resource.data.keys().hasOnly(['ownerId','department','chiefComplaint','medications','files','consentAt','amount','status','doctorId','doctorName','opinion','paidAt','createdAt','completedAt','paymentStatus','paymentOrderId','paymentId','updatedAt'])
+        && request.resource.data.keys().hasOnly(['ownerId','department','chiefComplaint','medications','files','consentAt','amount','status','doctorId','doctorName','assignedAt','opinion','paidAt','createdAt','completedAt','paymentStatus','paymentOrderId','paymentId','updatedAt'])
         && caseFields(request.resource.data,id)
         && request.resource.data.status == 'AWAITING_PAYMENT' && request.resource.data.paymentStatus == 'PENDING'
         && request.resource.data.paymentOrderId == null && request.resource.data.paymentId == null
         && request.resource.data.paidAt == null && request.resource.data.createdAt == request.time
-        && request.resource.data.doctorId == null && request.resource.data.doctorName == null
+        && request.resource.data.doctorId == null && request.resource.data.doctorName == null && request.resource.data.assignedAt == null
         && request.resource.data.opinion == null && request.resource.data.completedAt == null;
       allow update: if (patient() && resource.data.ownerId == request.auth.uid
         && resource.data.status == 'AWAITING_PAYMENT' && resource.data.paymentStatus == 'PENDING'
         && resource.data.paymentOrderId == null
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['files','department','chiefComplaint','medications','consentAt','updatedAt'])
         && caseFields(request.resource.data,id))
-        || (doctorFor(resource.data.department) && resource.data.status == 'IN_REVIEW' && resource.data.paymentStatus == 'PAID'
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','doctorId','doctorName','opinion','completedAt','updatedAt'])
-          && request.resource.data.status == 'COMPLETED' && request.resource.data.doctorId == request.auth.uid
-          && request.resource.data.doctorName == currentUser().fullName
+        || (doctorFor(resource.data.department) && resource.data.doctorId == request.auth.uid
+          && resource.data.status == 'IN_REVIEW' && resource.data.paymentStatus == 'PAID'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','opinion','completedAt','updatedAt'])
+          && request.resource.data.status == 'COMPLETED'
           && text(request.resource.data.opinion,20,20000) && request.resource.data.completedAt == request.time);
       allow delete: if false;
     }

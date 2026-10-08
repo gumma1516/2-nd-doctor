@@ -60,12 +60,21 @@ export async function createCase(uid: string, input: NewCaseInput): Promise<stri
       ownerId: uid, department: input.department, chiefComplaint: input.chiefComplaint,
       medications: input.medications, consentAt: input.consentAt, files: [], amount: PRICING.total,
       status: "AWAITING_PAYMENT", paymentStatus: "PENDING", paymentOrderId: null, paymentId: null,
-      doctorId: null, doctorName: null, opinion: null, paidAt: null,
+      doctorId: null, doctorName: null, assignedAt: null, opinion: null, paidAt: null,
       createdAt: serverTimestamp(), completedAt: null,
     });
     return null;
   });
-  if (existing?.files.length || existing?.paymentStatus === "PAID") return input.id;
+  if (existing?.files.length) {
+    if (existing.files.length !== input.files.length || existing.files.some((file, index) => {
+      const original = input.files[index];
+      return file.name !== original.name || file.size !== original.size || (original.type && file.contentType !== original.type);
+    })) {
+      throw new Error("These reports differ from the saved consultation. Resume the saved payment from your dashboard or start a new consultation.");
+    }
+    return input.id;
+  }
+  if (existing?.paymentStatus === "PAID") return input.id;
 
   // The record exists before uploads so Storage can authorize the owner's case folder.
   const uploaded = await uploadUserFiles(uid, `cases/${input.id}`, input.files);
@@ -90,22 +99,22 @@ export async function createCase(uid: string, input: NewCaseInput): Promise<stri
   return input.id;
 }
 
-export async function listOpenCasesForSpecialty(specialization: Specialty): Promise<Case[]> {
-  const snap = await getDocs(query(casesCol, where("department", "==", specialization), where("status", "==", "IN_REVIEW"), where("paymentStatus", "==", "PAID")));
+export async function listAssignedCases(doctorUid: string, specialization: Specialty): Promise<Case[]> {
+  const snap = await getDocs(query(casesCol, where("doctorId", "==", doctorUid), where("department", "==", specialization), where("status", "==", "IN_REVIEW"), where("paymentStatus", "==", "PAID")));
   return snap.docs.map(withId).sort(byNewest);
 }
 
-export async function completeCase(doctorUid: string, doctorName: string, caseId: string, opinion: string) {
+export async function completeCase(doctorUid: string, caseId: string, opinion: string) {
   const trimmed = opinion.trim();
   if (trimmed.length < 20 || trimmed.length > 20000) throw new Error("Your opinion must contain 20 to 20,000 characters.");
   const reference = doc(casesCol, caseId);
   await runTransaction(db, async (transaction) => {
     const snap = await transaction.get(reference);
     const data = snap.data() as Case | undefined;
-    if (!data || data.status !== "IN_REVIEW" || data.paymentStatus !== "PAID" || (data.doctorId && data.doctorId !== doctorUid)) {
+    if (!data || data.status !== "IN_REVIEW" || data.paymentStatus !== "PAID" || data.doctorId !== doctorUid) {
       throw new Error("This case is no longer available for review. Refresh your dashboard.");
     }
-    transaction.update(reference, { status: "COMPLETED", doctorId: doctorUid, doctorName, opinion: trimmed, completedAt: serverTimestamp() });
+    transaction.update(reference, { status: "COMPLETED", opinion: trimmed, completedAt: serverTimestamp() });
   });
   await logAudit(doctorUid, "case_completed", { caseId }).catch(() => undefined);
 }

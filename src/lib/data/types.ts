@@ -14,7 +14,7 @@ import type { Specialty } from "@/lib/constants";
  * Storage:
  *   users/{uid}/avatar/*        profile photo
  *   users/{uid}/credentials/*   doctor certificates (owner + admin)
- *   users/{uid}/cases/{caseId}/* medical reports (owner, assigned-specialty doctor, admin)
+ *   users/{uid}/cases/{caseId}/* medical reports (owner, assigned doctor, admin)
  */
 
 export type Role = "patient" | "doctor" | "admin";
@@ -69,6 +69,7 @@ export type DoctorProfile = {
   createdAt: Timestamp | null;
   updatedAt: Timestamp | null;
   reviewedAt: Timestamp | null;
+  lastAssignedAt?: Timestamp | null;
 };
 
 export type CaseStatus = "AWAITING_PAYMENT" | "IN_REVIEW" | "COMPLETED";
@@ -88,6 +89,7 @@ export type Case = {
   status: CaseStatus;
   doctorId: string | null;
   doctorName: string | null;
+  assignedAt: Timestamp | null;
   opinion: string | null;
   paidAt: Timestamp | null;
   createdAt: Timestamp | null;

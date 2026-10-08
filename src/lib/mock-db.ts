@@ -2,7 +2,7 @@
 
 import type { ConsultationDraft } from "./draft-store";
 import { db } from "./firebase";
-import { collection, addDoc, getDocs, updateDoc, doc, query, where, orderBy } from "firebase/firestore";
+import { collection, addDoc, getDocs, updateDoc, doc, query, where } from "firebase/firestore";
 
 export type Doctor = {
   id: string;

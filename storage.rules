@@ -34,8 +34,8 @@ service firebase.storage {
       function verifiedDoctor() {
         return profile().role == 'doctor' && profile().doctorAccess.status == 'VERIFIED'
           && profile().doctorAccess.specialization == consultation().department
-          && consultation().paymentStatus == 'PAID'
-          && (consultation().status == 'IN_REVIEW' || (consultation().status == 'COMPLETED' && consultation().doctorId == request.auth.uid));
+          && consultation().paymentStatus == 'PAID' && consultation().doctorId == request.auth.uid
+          && consultation().status in ['IN_REVIEW','COMPLETED'];
       }
       allow read: if active() && consultation().ownerId == uid
         && (request.auth.uid == uid || admin() || verifiedDoctor());

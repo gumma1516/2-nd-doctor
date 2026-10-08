@@ -29,6 +29,7 @@ function openDatabase(): Promise<IDBDatabase> {
     }
     const request = indexedDB.open(DB_NAME, 1);
     request.onupgradeneeded = () => request.result.createObjectStore(STORE, { keyPath: "uid" });
+    request.onblocked = () => reject(new Error("Draft storage is blocked by another tab. Close older SecondCare tabs and retry."));
     request.onerror = () => reject(new Error("Unable to open local draft storage. Check browser storage permissions."));
     request.onsuccess = () => resolve(request.result);
   });
@@ -38,7 +39,9 @@ async function transact<T>(mode: IDBTransactionMode, operation: (store: IDBObjec
   const database = await openDatabase();
   return new Promise((resolve, reject) => {
     const transaction = database.transaction(STORE, mode);
-    const request = operation(transaction.objectStore(STORE));
+    let request: IDBRequest<T>;
+    try { request = operation(transaction.objectStore(STORE)); }
+    catch (error) { database.close(); reject(error); return; }
     transaction.oncomplete = () => { database.close(); resolve(request.result); };
     transaction.onabort = transaction.onerror = () => {
       database.close();
@@ -73,9 +76,25 @@ export const draftStore = {
       files: record.files.map(({ blob, name, type, lastModified }) => new File([blob], name, { type, lastModified })),
     };
   },
-  async clear(uid: string): Promise<void> {
+  async clear(uid: string, expectedDraftId?: string): Promise<void> {
     requireOwner(uid);
-    await transact("readwrite", (store) => store.delete(uid));
+    if (!expectedDraftId) {
+      await transact("readwrite", (store) => store.delete(uid));
+      return;
+    }
+    // Payment in another tab must not erase a newer consultation draft.
+    const database = await openDatabase();
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(STORE, "readwrite");
+      const store = transaction.objectStore(STORE);
+      const request = store.get(uid);
+      request.onsuccess = () => {
+        const record = request.result as StoredDraft | undefined;
+        if (record?.draft.id === expectedDraftId) store.delete(uid);
+      };
+      transaction.oncomplete = () => { database.close(); resolve(); };
+      transaction.onerror = transaction.onabort = () => { database.close(); reject(new Error("Unable to clear the local draft.")); };
+    });
   },
   async clearAll(): Promise<void> {
     if (typeof indexedDB === "undefined") return;

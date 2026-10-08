@@ -29,7 +29,7 @@ const consultation = (id, ownerId = 'patient1', paid = true) => ({
   medications: '', files: [medicalFile(ownerId,id)], consentAt: new Date().toISOString(), amount: 1650,
   status: paid ? 'IN_REVIEW' : 'AWAITING_PAYMENT', paymentStatus: paid ? 'PAID' : 'PENDING',
   paymentId: paid ? `pay_${id}` : null, paymentOrderId: paid ? `order_${id}` : null,
-  doctorId: null, doctorName: null, opinion: null, paidAt: paid ? now : null,
+  doctorId: paid ? 'doctor1' : null, doctorName: paid ? 'Test doctor1' : null, assignedAt: paid ? now : null, opinion: null, paidAt: paid ? now : null,
   createdAt: now, completedAt: null,
 });
 const context = (uid, overrides = {}) => env.authenticatedContext(uid, {
@@ -52,7 +52,7 @@ beforeEach(async () => {
       setDoc(doc(db,'users','patient1'),user('patient1')),
       setDoc(doc(db,'users','patient2'),user('patient2')),
       setDoc(doc(db,'users','admin'),user('admin','admin')),
-      ...['doctor1','doctor2','pending'].flatMap((uid) => {
+      ...['doctor1','doctor2','doctor3','pending'].flatMap((uid) => {
         const status = uid === 'pending' ? 'PENDING' : 'VERIFIED';
         const specialization = uid === 'doctor2' ? 'Neurology' : 'Cardiology';
         return [setDoc(doc(db,'users',uid),user(uid,'doctor',{status,specialization})),setDoc(doc(db,'doctorProfiles',uid),doctor(uid,status,specialization))];
@@ -119,10 +119,10 @@ test('clients cannot claim payment or alter the amount and reports stay owner sc
 });
 
 test('only verified matching specialists see paid cases; completion cannot be overwritten', async () => {
-  for (const uid of ['pending','doctor2']) await assertFails(getDoc(doc(context(uid).firestore(),'cases','paid')));
+  for (const uid of ['pending','doctor2','doctor3']) await assertFails(getDoc(doc(context(uid).firestore(),'cases','paid')));
   const db=context('doctor1').firestore();
   await assertFails(getDoc(doc(db,'cases','unpaid')));
-  await assertSucceeds(getDocs(query(collection(db,'cases'),where('department','==','Cardiology'),where('status','==','IN_REVIEW'),where('paymentStatus','==','PAID'))));
+  await assertSucceeds(getDocs(query(collection(db,'cases'),where('doctorId','==','doctor1'),where('department','==','Cardiology'),where('status','==','IN_REVIEW'),where('paymentStatus','==','PAID'))));
   const completion={status:'COMPLETED',doctorId:'doctor1',doctorName:'Test doctor1',opinion:'Synthetic written specialist opinion for testing.',completedAt:serverTimestamp()};
   await assertFails(updateDoc(doc(db,'cases','paid'),{...completion,doctorId:'doctor2'}));
   await assertSucceeds(updateDoc(doc(db,'cases','paid'),completion));
@@ -144,7 +144,7 @@ test('disabled and revoked sessions cannot read data or files', async () => {
 test('private report reads allow owner/admin/matching doctor and deny everyone else', async () => {
   const path=medicalFile('patient1','paid').path;
   for (const uid of ['patient1','admin','doctor1']) await assertSucceeds(getBytes(ref(context(uid).storage(),path)));
-  for (const uid of ['patient2','doctor2','pending']) await assertFails(getBytes(ref(context(uid).storage(),path)));
+  for (const uid of ['patient2','doctor2','doctor3','pending']) await assertFails(getBytes(ref(context(uid).storage(),path)));
   await assertFails(getBytes(ref(env.unauthenticatedContext().storage(),path)));
 });
 

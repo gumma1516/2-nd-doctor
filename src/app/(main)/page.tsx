@@ -1,214 +1,151 @@
-import { ArrowRight, ShieldCheck, FileText, Clock, Stethoscope, BadgeCheck, Check } from "lucide-react";
 import Link from "next/link";
+import { ArrowRight, ArrowUpRight, Activity, Brain, HeartPulse, Bone, Scan, Stethoscope, FileText, ShieldCheck, Check, LockKeyhole, ClipboardCheck, Upload, ChevronDown } from "lucide-react";
 import { PRICING, SPECIALTIES, formatINR } from "@/lib/constants";
+import { FadeIn } from "@/components/FadeIn";
 
-const STEPS = [
-  {
-    Icon: FileText,
-    color: "blue",
-    title: "1. Upload Records",
-    body: "Securely upload your prescriptions, MRI/CT scans, blood reports and medical history in PDF, JPEG, PNG or DOCX.",
-  },
-  {
-    Icon: Stethoscope,
-    color: "teal",
-    title: "2. Expert Review",
-    body: "A specialist whose medical registration we have verified reviews your case in the relevant department.",
-  },
-  {
-    Icon: Clock,
-    color: "indigo",
-    title: "3. Get Your Opinion",
-    body: "Receive a detailed written opinion, with the option of a follow-up phone or video consultation.",
-  },
-] as const;
-
-const COLOR: Record<string, string> = {
-  blue: "bg-blue-500/10 border-blue-500/20 text-blue-400",
-  teal: "bg-teal-500/10 border-teal-500/20 text-teal-400",
-  indigo: "bg-indigo-500/10 border-indigo-500/20 text-indigo-400",
-};
-
-const INCLUDED = [
-  "Review by a verified specialist in your chosen department",
-  "Detailed written second opinion",
-  "Secure, access-controlled storage of your reports",
-  "One follow-up clarification question",
+const specialtyIcons = [HeartPulse, Brain, Scan, Bone, Activity, Stethoscope, Activity, Stethoscope];
+const steps = [
+  { number: "01", icon: Upload, title: "Share your story.", text: "Choose a specialty, describe your concerns, and upload the reports that matter." },
+  { number: "02", icon: Stethoscope, title: "Get a specialist perspective.", text: "After payment, your case is matched with an available, verified doctor in your chosen specialty." },
+  { number: "03", icon: ClipboardCheck, title: "Move forward with clarity.", text: "Read your specialist’s written opinion and revisit your records in your private dashboard." },
+];
+const questions = [
+  { question: "How is my specialist selected?", answer: "Your consultation is assigned to an available, verified doctor in the specialty you choose. If a specialist is not immediately available, the request remains in the assignment queue and its status is shown in your dashboard." },
+  { question: "Which records should I share?", answer: "Share relevant prescriptions, scan reports, test results, discharge summaries, and your current diagnosis. You can upload PDF, JPG, PNG, and DOCX files. The consultation form shows the file and size limits before you upload." },
+  { question: "Where will I receive my second opinion?", answer: "Your specialist’s written opinion appears in your patient dashboard when the review is complete. You can also see your submitted reports and the consultation’s current status there." },
+  { question: "Who can access my medical records?", answer: "Your records are available to you, the specialist assigned to your case, and authorized administrators who manage the service. Review the privacy policy before sharing your information." },
+  { question: "Is this suitable for urgent medical concerns?", answer: "SecondCare is for reviewing the records you share and does not replace an in-person examination or emergency care. In a medical emergency, call 112 or visit the nearest hospital." },
 ];
 
-export default function Home() {
-  return (
-    <div className="flex flex-col w-full">
-      {/* Hero */}
-      <section className="relative overflow-hidden pt-24 pb-32">
-        <div className="absolute top-0 inset-x-0 h-full bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-brand-900/20 via-zinc-950 to-zinc-950 -z-10" />
-        <div className="absolute right-0 top-1/4 -translate-y-1/2 translate-x-1/3 size-[500px] rounded-full bg-brand-600/10 blur-3xl -z-10" />
-
-        <div className="container mx-auto px-4 flex flex-col items-center text-center">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-brand-500/10 border border-brand-500/20 text-brand-400 text-sm font-medium mb-8">
-            <BadgeCheck className="size-4" aria-hidden />
-            <span>Every specialist&apos;s medical registration is verified</span>
-          </div>
-
-          <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight text-white max-w-4xl mb-6 leading-[1.1]">
-            Trusted Second Opinions from{" "}
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-400 to-teal-400">
-              Verified Specialists
-            </span>
-          </h1>
-
-          <p className="text-xl text-zinc-400 max-w-2xl mb-10 leading-relaxed">
-            Unsure about your diagnosis or a recommended surgery? Upload your medical records and get a thorough review
-            from an experienced specialist.
-          </p>
-
-          <div className="flex flex-col sm:flex-row items-center gap-4">
-            <Link
-              href="/patient/register"
-              id="start-consultation-btn"
-              className="group bg-white hover:bg-zinc-100 text-zinc-950 px-8 py-4 rounded-full text-lg font-semibold transition-all shadow-[0_0_20px_rgba(255,255,255,0.1)] hover:shadow-[0_0_30px_rgba(255,255,255,0.2)] flex items-center gap-2"
-            >
-              Start Your Consultation
-              <ArrowRight className="size-5 group-hover:translate-x-1 transition-transform" aria-hidden />
-            </Link>
-            <Link
-              href="#specialists"
-              id="meet-doctors-btn"
-              className="bg-zinc-900 hover:bg-zinc-800 text-white border border-zinc-800 hover:border-zinc-700 px-8 py-4 rounded-full text-lg font-medium transition-all shadow-sm flex items-center gap-2"
-            >
-              Explore Specialties
-            </Link>
-          </div>
+function ConsultationPreview() {
+  return <div className="relative w-full max-w-[480px] mx-auto lg:ml-auto pt-6 pb-12">
+    <div className="absolute inset-12 rounded-full bg-brand-300/8 blur-[70px]" aria-hidden />
+    <div className="glass-panel rounded-[28px] overflow-hidden relative">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-white/8 bg-white/2">
+        <div className="flex gap-1.5" aria-hidden><span className="size-2 rounded-full bg-zinc-700" /><span className="size-2 rounded-full bg-zinc-700" /><span className="size-2 rounded-full bg-brand-300/70" /></div>
+        <span className="text-[10px] tracking-[.16em] uppercase text-zinc-400">Your care workspace · Preview</span>
+      </div>
+      <div className="p-6 sm:p-7">
+        <div className="flex items-center justify-between gap-3 mb-7">
+          <div className="flex items-center gap-3"><span className="icon-tile"><HeartPulse className="size-6" aria-hidden /></span><div><p className="text-base font-medium tracking-tight">Cardiology review</p><p className="text-xs text-zinc-400 mt-1">A second perspective on your care</p></div></div>
+          <span className="size-8 rounded-full border border-white/10 flex items-center justify-center"><ArrowUpRight className="size-4 text-zinc-400" aria-hidden /></span>
         </div>
-      </section>
-
-      {/* How it works */}
-      <section id="how-it-works" className="py-24 bg-zinc-900 border-t border-zinc-800 scroll-mt-16">
-        <div className="container mx-auto px-4">
-          <div className="text-center max-w-3xl mx-auto mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">How SecondCare Works</h2>
-            <p className="text-lg text-zinc-400">A simple process designed for your peace of mind.</p>
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
-            {STEPS.map(({ Icon, color, title, body }) => (
-              <div
-                key={title}
-                className="bg-zinc-950 rounded-3xl p-8 border border-zinc-800 group hover:border-zinc-700 transition-colors"
-              >
-                <div
-                  className={`size-12 rounded-2xl border flex items-center justify-center mb-6 group-hover:scale-110 transition-transform ${COLOR[color]}`}
-                >
-                  <Icon className="size-6" aria-hidden />
-                </div>
-                <h3 className="text-xl font-bold text-white mb-3">{title}</h3>
-                <p className="text-zinc-400 leading-relaxed">{body}</p>
-              </div>
-            ))}
-          </div>
+        <div className="relative rounded-2xl border border-brand-300/15 bg-brand-300/3 px-5 py-5 mb-5 overflow-hidden">
+          <div className="flex justify-between text-[10px] uppercase tracking-[.13em] text-zinc-400"><span>More perspective. More clarity.</span><Activity className="size-3.5 text-brand-300" aria-hidden /></div>
+          <svg viewBox="0 0 360 75" className="w-full h-20 mt-2" fill="none" aria-hidden>
+            <defs><linearGradient id="pulse-gradient"><stop stopColor="#71ead2" /><stop offset="1" stopColor="#abb1ff" /></linearGradient></defs>
+            <path d="M0 48H60l10-7 10 7h27l14-22 15 42 18-60 16 54 13-26 12 12h165" stroke="url(#pulse-gradient)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="preview-line" />
+            <path d="M0 72H360" stroke="#ffffff08" />
+          </svg>
+          <p className="text-xs text-zinc-300">Your records. A specialist’s expertise.</p>
         </div>
-      </section>
-
-      {/* Specialties */}
-      <section id="specialists" className="py-24 bg-zinc-950 scroll-mt-16">
-        <div className="container mx-auto px-4 max-w-5xl">
-          <div className="text-center max-w-3xl mx-auto mb-12">
-            <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">Our Specialties</h2>
-            <p className="text-lg text-zinc-400">
-              Get reviewed by specialists across major disciplines. Every doctor&apos;s NMC / State Medical Council
-              registration is manually verified before they can review cases.
-            </p>
-          </div>
-          <ul className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {SPECIALTIES.map((s) => (
-              <li
-                key={s}
-                className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-5 text-center text-zinc-200 font-medium hover:border-brand-500/50 hover:bg-brand-500/5 hover:text-white transition-colors"
-              >
-                {s}
-              </li>
-            ))}
-          </ul>
+        <p className="text-[10px] tracking-[.15em] uppercase text-zinc-500 mb-3">Everything in one place</p>
+        {["Medical report.pdf", "Prescription.pdf"].map((file, i) => <div key={file} className="flex items-center gap-3 rounded-xl bg-zinc-950/45 border border-white/6 p-3 mb-2">
+          <FileText className="size-4 text-[#abb1ff]" aria-hidden /><span className="text-xs text-zinc-200 flex-1">{file}</span><span className="text-[10px] text-zinc-500">{i === 0 ? "Report" : "Record"}</span><Check className="size-3.5 text-brand-300" aria-hidden />
+        </div>)}
+        <div className="grid grid-cols-3 gap-2 mt-6 pt-5 border-t border-white/8">
+          {["Submit records", "Specialist review", "Written opinion"].map((label, i) => <div key={label}><span className="inline-flex size-5 items-center justify-center rounded-full text-[9px] border border-brand-300/25 bg-brand-300/8 text-brand-200">{i + 1}</span><p className="text-[10px] text-zinc-400 mt-2">{label}</p></div>)}
         </div>
-      </section>
-
-      {/* Pricing */}
-      <section id="pricing" className="py-24 bg-zinc-900 border-y border-zinc-800 scroll-mt-16">
-        <div className="container mx-auto px-4 max-w-3xl">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">Simple, Transparent Pricing</h2>
-            <p className="text-lg text-zinc-400">One flat fee per consultation. No hidden charges.</p>
-          </div>
-          <div className="relative rounded-[2rem] border border-brand-500/30 bg-zinc-950 p-10 shadow-[0_0_60px_rgba(37,99,235,0.12)] overflow-hidden">
-            <div className="absolute -top-20 -right-20 size-64 bg-brand-500/10 blur-3xl rounded-full" />
-            <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-8">
-              <div>
-                <p className="text-sm uppercase tracking-wider text-brand-400 font-semibold mb-2">Specialist Opinion</p>
-                <p className="text-5xl font-extrabold text-white">{formatINR(PRICING.total)}</p>
-                <p className="text-sm text-zinc-500 mt-2">
-                  {formatINR(PRICING.consultationFee)} consultation + {formatINR(PRICING.platformFee)} platform fee (incl.
-                  GST)
-                </p>
-              </div>
-              <ul className="space-y-3">
-                {INCLUDED.map((item) => (
-                  <li key={item} className="flex items-start gap-3 text-zinc-300 text-sm">
-                    <Check className="size-4 text-emerald-400 mt-0.5 shrink-0" aria-hidden /> {item}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <Link
-              href="/patient/register"
-              id="pricing-cta-btn"
-              className="relative z-10 mt-10 w-full inline-flex items-center justify-center gap-2 bg-brand-600 hover:bg-brand-500 text-white px-6 py-4 rounded-full font-semibold transition-all border border-brand-500/50"
-            >
-              Get Started <ArrowRight className="size-5" aria-hidden />
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* Trust & Safety */}
-      <section className="py-24 bg-zinc-950">
-        <div className="container mx-auto px-4 max-w-5xl">
-          <div className="bg-gradient-to-br from-brand-900 to-zinc-900 rounded-[2.5rem] p-10 md:p-16 text-white text-center md:text-left flex flex-col md:flex-row items-center justify-between gap-10 overflow-hidden relative border border-brand-800/50 shadow-2xl">
-            <div className="absolute top-0 right-0 size-64 bg-brand-500/20 blur-3xl rounded-full" />
-            <div className="max-w-xl z-10">
-              <h2 className="text-3xl md:text-4xl font-bold mb-4 text-white">Your Medical Data, Protected</h2>
-              <p className="text-brand-100/80 text-lg leading-relaxed mb-8">
-                Your records are encrypted in transit and at rest, and are only accessible to you and the specialist
-                assigned to your case.
-              </p>
-              <ul className="space-y-4">
-                {[
-                  "Encrypted in transit (TLS) and at rest",
-                  "Access limited to your assigned specialist",
-                  "Explicit consent before any sharing",
-                ].map((t) => (
-                  <li key={t} className="flex items-center gap-3 text-zinc-300">
-                    <div className="size-6 rounded-full bg-brand-500/20 border border-brand-500/30 flex items-center justify-center shrink-0">
-                      <ShieldCheck className="size-3.5 text-brand-400" aria-hidden />
-                    </div>
-                    {t}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="relative z-10 flex-shrink-0" aria-hidden>
-              <div className="size-48 rounded-full bg-gradient-to-br from-brand-500/30 to-brand-700/30 p-1 flex items-center justify-center shadow-[0_0_50px_rgba(59,130,246,0.3)] border border-brand-500/30">
-                <div className="size-full bg-zinc-950 rounded-full flex items-center justify-center">
-                  <ShieldCheck className="size-24 text-brand-500" />
-                </div>
-              </div>
-            </div>
-          </div>
-          <p className="mt-8 text-center text-xs text-zinc-600 max-w-2xl mx-auto">
-            SecondCare provides second opinions based on the records you share and does not replace an in-person
-            examination. In a medical emergency, call 112 or visit the nearest hospital.
-          </p>
-        </div>
-      </section>
+      </div>
     </div>
-  );
+    <div className="preview-float relative sm:absolute sm:-left-5 sm:bottom-0 glass-panel rounded-2xl px-4 py-3 flex items-center gap-3 w-fit mx-auto mt-4 sm:mt-0">
+      <span className="size-9 bg-brand-300/10 rounded-xl flex items-center justify-center"><ShieldCheck className="size-5 text-brand-300" aria-hidden /></span><div><p className="text-xs font-medium">A private space for your health</p><p className="text-[10px] text-zinc-400 mt-1">Records shared for specialist review</p></div>
+    </div>
+  </div>;
+}
+
+export default function Home() {
+  return <div>
+    <section className="page-shell grid lg:grid-cols-[1.08fr_1fr] items-center gap-10 lg:gap-14 pt-14 pb-16 md:pt-20 md:pb-24">
+      <FadeIn>
+        <span className="eyebrow"><span className="size-1.5 bg-brand-300 rounded-full" /> A fresh perspective on your health</span>
+        <h1 className="text-[clamp(2.7rem,5.5vw,4.6rem)] font-medium tracking-[-.065em] leading-[1.06] mt-6 mb-6">A second opinion.<br /><span className="gradient-text">A clearer path<br className="hidden xl:block" /> forward.</span></h1>
+        <p className="text-base md:text-lg text-zinc-400 leading-relaxed max-w-[440px]">Make sense of your diagnosis and treatment options with a written second opinion from a verified specialist.</p>
+        <div className="flex flex-col min-[400px]:flex-row gap-3 mt-8">
+          <Link href="/patient/register" id="hero-cta-btn" className="primary-link">Get a second opinion <ArrowRight className="size-4" aria-hidden /></Link>
+          <Link href="#how-it-works" className="secondary-link">Explore how it works</Link>
+        </div>
+        <div className="flex flex-wrap gap-x-5 gap-y-3 mt-7 text-xs text-zinc-400">
+          <span className="inline-flex items-center gap-2"><ShieldCheck className="size-4 text-brand-300" aria-hidden /> Verified specialists</span>
+          <span className="inline-flex items-center gap-2"><LockKeyhole className="size-3.5 text-brand-300" aria-hidden /> Private records</span>
+        </div>
+      </FadeIn>
+      <FadeIn delay={0.15}><ConsultationPreview /></FadeIn>
+    </section>
+
+    <div className="border-y border-white/8 bg-white/[.015]">
+      <div className="page-shell grid sm:grid-cols-3 gap-5 py-6">
+        {[["Expertise that fits", "Matched to your chosen specialty", Stethoscope], ["Your care, organized", "Reports and opinions in one workspace", FileText], ["One clear price", formatINR(PRICING.total) + " per consultation", Check]].map(([title, text, Icon]) => {
+          const I = Icon as typeof Check;
+          return <div key={title as string} className="flex items-center gap-3 sm:justify-center"><I className="size-5 text-brand-300 shrink-0" strokeWidth={1.5} aria-hidden /><div><p className="text-xs font-medium text-zinc-200">{title as string}</p><p className="text-[11px] text-zinc-500 mt-1">{text as string}</p></div></div>;
+        })}
+      </div>
+    </div>
+
+    <section id="how-it-works" className="page-shell section-space">
+      <FadeIn><div className="flex flex-col md:flex-row md:items-end justify-between gap-5 mb-10">
+        <div><p className="eyebrow mb-4">Designed around you</p><h2 className="section-title">From uncertainty<br />to understanding.</h2></div>
+        <p className="max-w-sm text-sm text-zinc-400 leading-relaxed">A straightforward process that keeps your records, specialist review, and next steps connected.</p>
+      </div></FadeIn>
+      <div className="grid md:grid-cols-3 gap-4">
+        {steps.map(({ number, icon: Icon, title, text }, i) => <FadeIn delay={i * .08} key={number}>
+          <div className="glass-panel interactive-card rounded-3xl p-7 h-full">
+            <div className="flex items-center justify-between mb-8"><span className="icon-tile"><Icon className="size-5" strokeWidth={1.5} aria-hidden /></span><span className="font-mono text-xs text-zinc-600">{number}</span></div>
+            <h3 className="text-lg font-medium tracking-tight mb-3">{title}</h3><p className="text-sm text-zinc-400 leading-relaxed">{text}</p>
+          </div>
+        </FadeIn>)}
+      </div>
+    </section>
+
+    <section id="specialists" className="page-shell section-space border-t border-white/8">
+      <FadeIn><div className="text-center max-w-xl mx-auto mb-10"><p className="eyebrow mb-4">The right expertise</p><h2 className="section-title">Different specialties.<br /><span className="text-zinc-400">One thoughtful review.</span></h2><p className="text-sm text-zinc-400 leading-relaxed mt-5">Choose the specialty that fits your concern. Doctors complete registration verification before they can review cases.</p></div></FadeIn>
+      <ul className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {SPECIALTIES.map((specialty, i) => {
+          const Icon = specialtyIcons[i];
+          return <li key={specialty}><Link href="/patient/register" className="glass-panel interactive-card rounded-2xl p-5 flex flex-col gap-5 h-full group" aria-label={"Get a second opinion in " + specialty}>
+            <div className="flex justify-between items-start"><Icon className="size-6 text-brand-200" strokeWidth={1.4} aria-hidden /><ArrowUpRight className="size-3.5 text-zinc-600 group-hover:text-brand-200 transition-colors" aria-hidden /></div><span className="text-[13px] font-medium">{specialty}</span>
+          </Link></li>;
+        })}
+      </ul>
+    </section>
+
+    <section className="page-shell section-space">
+      <div className="grid md:grid-cols-[1.25fr_1fr] gap-4">
+        <FadeIn className="h-full"><div className="glass-panel rounded-3xl p-8 md:p-10 h-full overflow-hidden">
+          <span className="icon-tile mb-8"><ShieldCheck className="size-6" strokeWidth={1.5} aria-hidden /></span>
+          <p className="eyebrow mb-4">Personal information. Thoughtful care.</p><h2 className="section-title max-w-sm">Your records deserve<br />a private space.</h2>
+          <p className="text-sm text-zinc-400 mt-5 leading-relaxed max-w-md">Keep your medical history and specialist opinions together. Records are shared with your assigned doctor and authorized administrators who manage your care request.</p>
+          <Link href="/privacy" className="inline-flex items-center gap-2 text-xs text-brand-200 mt-6 hover:text-white">How we handle your information <ArrowUpRight className="size-3.5" aria-hidden /></Link>
+        </div></FadeIn>
+        <div className="grid gap-4">
+          <FadeIn delay={.08}><div className="glass-panel rounded-3xl p-7 flex items-start gap-5"><span className="icon-tile"><Stethoscope className="size-5" aria-hidden /></span><div><h3 className="font-medium text-lg tracking-tight">Expertise, verified.</h3><p className="text-sm text-zinc-400 leading-relaxed mt-2">Doctor credentials are checked before a specialist can receive a case.</p></div></div></FadeIn>
+          <FadeIn delay={.16}><div className="glass-panel rounded-3xl p-7 flex items-start gap-5"><span className="icon-tile border-[#abb1ff]/20! bg-[#abb1ff]/5! text-[#abb1ff]!"><ClipboardCheck className="size-5" aria-hidden /></span><div><h3 className="font-medium text-lg tracking-tight">Clarity you can revisit.</h3><p className="text-sm text-zinc-400 leading-relaxed mt-2">A written opinion stays alongside your reports, ready for your next care conversation.</p></div></div></FadeIn>
+        </div>
+      </div>
+    </section>
+
+    <section id="pricing" className="page-shell section-space border-t border-white/8">
+      <div className="grid lg:grid-cols-2 gap-10 lg:gap-20 items-center">
+        <FadeIn><p className="eyebrow mb-4">Less guesswork</p><h2 className="section-title">A clear perspective.<br /><span className="text-zinc-400">At a clear price.</span></h2><p className="text-sm text-zinc-400 leading-relaxed max-w-sm mt-5">One fee for your specialist’s review. See the complete cost before you submit payment.</p><div className="mt-7 inline-flex items-center gap-2 text-xs text-zinc-300"><LockKeyhole className="size-4 text-brand-300" aria-hidden /> Payment confirmed before specialist assignment</div></FadeIn>
+        <FadeIn delay={.1}><div className="glass-panel rounded-3xl p-7 sm:p-9 border-brand-300/25!">
+          <div className="flex justify-between items-center gap-2"><p className="text-sm font-medium">Specialist second opinion</p><span className="status-pill">One consultation</span></div>
+          <p className="text-5xl tracking-[-.06em] font-medium mt-7">{formatINR(PRICING.total).replace(".00", "")}<span className="text-sm text-zinc-500 tracking-normal font-normal"> / review</span></p>
+          <p className="text-xs text-zinc-400 mt-3">{formatINR(PRICING.consultationFee)} consultation + {formatINR(PRICING.platformFee)} platform fee (incl. GST)</p>
+          <ul className="border-t border-white/10 mt-7 pt-6 space-y-3">{["Review by a verified specialist", "A written second opinion", "Access to your submitted records", "Consultation status in your dashboard"].map(item => <li key={item} className="text-sm text-zinc-300 flex gap-3"><Check className="size-4 text-brand-300 shrink-0 mt-0.5" aria-hidden />{item}</li>)}</ul>
+          <Link href="/patient/register" id="pricing-cta-btn" className="primary-link w-full mt-8">Start your consultation <ArrowRight className="size-4" aria-hidden /></Link>
+        </div></FadeIn>
+      </div>
+    </section>
+
+    <section className="page-shell section-space border-t border-white/8">
+      <div className="grid md:grid-cols-[.75fr_1.25fr] gap-10 md:gap-16"><div><p className="eyebrow mb-4">A little more clarity</p><h2 className="section-title">Good questions.<br />Clear answers.</h2></div><div>{questions.map(({ question, answer }) => <details key={question} className="group border-b border-white/10 first:border-t py-5">
+        <summary className="list-none flex items-center justify-between gap-5 text-sm font-medium text-zinc-200">{question}<ChevronDown className="size-4 shrink-0 text-zinc-400 transition-transform group-open:rotate-180" aria-hidden /></summary><p className="text-sm text-zinc-400 leading-relaxed pt-4 pr-5">{answer}</p>
+      </details>)}</div></div>
+    </section>
+
+    <section className="page-shell pb-16">
+      <FadeIn><div className="glass-panel rounded-[28px] p-8 md:p-12 flex flex-col md:flex-row md:items-center justify-between gap-8 overflow-hidden"><div><p className="eyebrow mb-4">Your next step starts here</p><h2 className="section-title">Make room for<br /><span className="gradient-text">a second perspective.</span></h2></div><Link href="/patient/register" className="primary-link shrink-0">Get a second opinion <ArrowRight className="size-4" aria-hidden /></Link></div></FadeIn>
+      <p className="text-xs text-zinc-500 text-center leading-relaxed max-w-2xl mx-auto mt-8">SecondCare provides opinions based on your submitted records and does not replace an in-person examination. In a medical emergency, call 112 or visit the nearest hospital.</p>
+    </section>
+  </div>;
 }
