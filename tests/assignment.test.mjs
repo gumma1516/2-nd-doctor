@@ -4,7 +4,6 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import vm from 'node:vm';
 import ts from 'typescript';
 import { initializeApp, deleteApp } from 'firebase-admin/app';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
@@ -30,7 +29,11 @@ function loadModule(path) {
     if (name.startsWith('.')) return loadModule(resolve(dirname(path), `${name}.ts`));
     return require(name);
   };
-  vm.runInNewContext('(function(require,module,exports){' + output + '\n})', { console }, { filename: path })(scopedRequire, module, module.exports);
+  // Compiled in this realm, not a vm context: firebase-admin checks the
+  // transaction callback's result with `instanceof Promise`, which fails across
+  // realms, and application modules legitimately read process.env. Isolation
+  // comes from scopedRequire above, which is all this loader needs.
+  new Function('require', 'module', 'exports', output)(scopedRequire, module, module.exports);
   return module.exports;
 }
 const { assignCase, assignPendingCases } = loadModule(fileURLToPath(new URL('../src/lib/server/assignment.ts', import.meta.url)));

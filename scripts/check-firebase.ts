@@ -1,4 +1,4 @@
-// scratch/check_firebase.ts — run with: npx tsx --env-file=.env.local scratch/check_firebase.ts
+// Run with: npx tsx --env-file=.env.local scripts/check-firebase.ts
 import { initializeApp } from "firebase/app";
 import { getFirestore, collection, addDoc, getDocsFromServer, terminate } from "firebase/firestore";
 

@@ -73,6 +73,12 @@ export async function createOrder(uid: string, caseId: string) {
     await Promise.all(files.map(async (file) => {
       const prefix = `users/${uid}/cases/${caseId}/`;
       if (!file || typeof file.path !== "string" || !file.path.startsWith(prefix) || file.path.slice(prefix.length).includes("/") || file.path.includes("..") || uniquePaths.has(file.path)) throw new HttpError(409, "Invalid report attachment.");
+      // Firestore rules bound the key set but cannot require every key, so the
+      // recorded metadata is checked here before it is compared with Storage.
+      if (typeof file.name !== "string" || !file.name || file.name.length > 255 ||
+          typeof file.contentType !== "string" || !Number.isSafeInteger(file.size) || file.size <= 0) {
+        throw new HttpError(409, "Report upload is incomplete or invalid. Upload the reports again.");
+      }
       uniquePaths.add(file.path);
       const [metadata] = await bucket.file(file.path).getMetadata();
       const size = Number(metadata.size);

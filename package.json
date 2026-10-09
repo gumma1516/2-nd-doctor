@@ -6,7 +6,13 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test tests/auth.test.cjs",
+    "test:rules": "firebase emulators:exec --project demo-secondcare --config firebase.emulators.json --only firestore,storage,auth \"node --test tests/security.rules.test.mjs\"",
+    "test:assignment": "firebase emulators:exec --project demo-secondcare --config firebase.emulators.json --only firestore \"node --test tests/assignment.test.mjs\"",
+    "test:all": "npm run test && npm run test:rules && npm run test:assignment",
+    "verify": "npm run lint && npm run typecheck && npm run build"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.92",

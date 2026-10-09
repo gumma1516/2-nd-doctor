@@ -7,7 +7,7 @@ import { WorkspaceHeader } from "@/components/WorkspaceUI";
 import { Alert, Button, Card, Field, Input, Select } from "@/components/ui";
 import { useAuth } from "@/lib/auth/AuthProvider";
 import { RequireAuth } from "@/lib/auth/RequireAuth";
-import { normalizeProfile } from "@/lib/auth/profile-input";
+import { normalizeProfile, ProfileInputError, type ProfileField } from "@/lib/auth/profile-input";
 import { updateUserProfile } from "@/lib/data/users";
 import { DEFAULT_SETTINGS, type UserProfile, type UserSettings } from "@/lib/data/types";
 import { errorMessage } from "@/lib/errors";
@@ -17,6 +17,9 @@ export default function AccountPage() {
   return <RequireAuth>{profile && <AccountForm key={profile.uid} profile={profile} />}</RequireAuth>;
 }
 
+const FIELD_OF = { fullName: "fullName", phone: "phone", dob: "dob", place: "place" } as const satisfies Record<string, ProfileField>;
+const INPUT_OF: Record<ProfileField, string> = { fullName: "account-name", phone: "account-phone", dob: "account-dob", place: "account-place" };
+
 function AccountForm({ profile }: { profile: UserProfile }) {
   const { logout, logoutAllDevices } = useAuth();
   const router = useRouter();
@@ -25,22 +28,29 @@ function AccountForm({ profile }: { profile: UserProfile }) {
   const [busy, setBusy] = useState<"save" | "logout" | "logout-all" | null>(null);
   const working = useRef(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<ProfileField, string>>>({});
   const [notice, setNotice] = useState<string | null>(null);
   const change = (key: keyof typeof form) => (event: React.ChangeEvent<HTMLInputElement>) => {
     setForm((current) => ({ ...current, [key]: event.target.value }));
     setNotice(null);
+    setFieldErrors((current) => ({ ...current, [FIELD_OF[key]]: undefined }));
   };
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
     if (working.current) return;
     working.current = true;
-    setBusy("save"); setError(null); setNotice(null);
+    setBusy("save"); setError(null); setNotice(null); setFieldErrors({});
     try {
       const normalized = normalizeProfile(form, profile.role === "patient");
       await updateUserProfile(profile.uid, { ...normalized, settings });
       setForm({ ...normalized, dob: normalized.dob ?? "", place: normalized.place ?? "" });
       setNotice("Your profile and communication preferences have been saved.");
-    } catch (err) { setError(errorMessage(err, "Could not save your profile. Try again.")); }
+    } catch (err) {
+      if (err instanceof ProfileInputError) {
+        setFieldErrors({ [err.field]: err.message });
+        document.getElementById(INPUT_OF[err.field])?.focus();
+      } else setError(errorMessage(err, "Could not save your profile. Try again."));
+    }
     finally { working.current = false; setBusy(null); }
   };
   const signOut = async (all: boolean) => {
@@ -61,10 +71,10 @@ function AccountForm({ profile }: { profile: UserProfile }) {
         <div className="flex items-center gap-4 pb-6 border-b border-white/10"><span className="icon-tile size-14!"><UserRound className="size-6" aria-hidden /></span><div className="min-w-0"><h2 className="text-lg font-medium">{profile.fullName}</h2><p className="text-xs text-zinc-400 mt-1 break-all">{profile.email}</p><span className="status-pill capitalize mt-3">{profile.role} · {profile.status}</span></div></div>
         {profile.role === "doctor" && <p className="text-sm text-zinc-400">Your verified medical credentials and specialty stay linked to your original application. Contact the administrator to correct these details.</p>}
         <div className="grid gap-5 sm:grid-cols-2">
-          <Field id="account-name" label="Full name"><Input id="account-name" autoComplete="name" required minLength={3} maxLength={120} value={form.fullName} onChange={change("fullName")} /></Field>
-          <Field id="account-phone" label="Mobile number"><Input id="account-phone" type="tel" autoComplete="tel" required maxLength={16} value={form.phone} onChange={change("phone")} /></Field>
-          <Field id="account-dob" label={profile.role === "patient" ? "Date of birth" : "Date of birth (optional)"}><Input id="account-dob" type="date" min="1900-01-01" autoComplete="bday" required={profile.role === "patient"} value={form.dob} onChange={change("dob")} /></Field>
-          <Field id="account-place" label={profile.role === "patient" ? "City / place" : "City / place (optional)"}><Input id="account-place" autoComplete="address-level2" required={profile.role === "patient"} maxLength={120} value={form.place} onChange={change("place")} /></Field>
+          <Field id="account-name" label="Full name" error={fieldErrors.fullName}><Input id="account-name" autoComplete="name" required minLength={3} maxLength={120} invalid={!!fieldErrors.fullName} value={form.fullName} onChange={change("fullName")} /></Field>
+          <Field id="account-phone" label="Mobile number" error={fieldErrors.phone}><Input id="account-phone" type="tel" autoComplete="tel" required maxLength={16} invalid={!!fieldErrors.phone} value={form.phone} onChange={change("phone")} /></Field>
+          <Field id="account-dob" label={profile.role === "patient" ? "Date of birth" : "Date of birth (optional)"} error={fieldErrors.dob}><Input id="account-dob" type="date" min="1900-01-01" autoComplete="bday" invalid={!!fieldErrors.dob} required={profile.role === "patient"} value={form.dob} onChange={change("dob")} /></Field>
+          <Field id="account-place" label={profile.role === "patient" ? "City / place" : "City / place (optional)"} error={fieldErrors.place}><Input id="account-place" autoComplete="address-level2" invalid={!!fieldErrors.place} required={profile.role === "patient"} maxLength={120} value={form.place} onChange={change("place")} /></Field>
         </div>
         <fieldset className="space-y-4 border-t border-zinc-800 pt-5">
           <legend className="px-1 font-semibold text-white"><SlidersHorizontal className="inline size-4 text-brand-200 mr-2" aria-hidden />Communication preferences</legend>

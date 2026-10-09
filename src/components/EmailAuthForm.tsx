@@ -10,6 +10,7 @@ import { getUserProfile, logAudit, touchLastLogin } from "@/lib/data/users";
 import { errorMessage } from "@/lib/errors";
 import { Alert, Button, Card, Field, Input } from "@/components/ui";
 import { EMAIL_REGEX, sendLoginLink, RESEND_SECONDS, homeFor } from "@/lib/auth/email-link";
+import { rememberSpecialty, specialtyFromSearch } from "@/lib/specialty-intent";
 
 type Props = {
   mode: "login" | "register";
@@ -20,7 +21,7 @@ export function EmailAuthForm({ mode, role }: Props) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [step, setStep] = useState<"email" | "sent">("email");
-  const [loading, setLoading] = useState(false);
+  const [pending, setPending] = useState<"email" | "google" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [emailError, setEmailError] = useState<string | undefined>();
   const [cooldown, setCooldown] = useState(0);
@@ -30,6 +31,11 @@ export function EmailAuthForm({ mode, role }: Props) {
   const accent = role === "doctor" ? "teal" : "brand";
   const isLogin = mode === "login";
   const roleLabel = role === "doctor" ? "Doctor" : "Patient";
+
+  // Read from the location rather than useSearchParams so these routes stay static.
+  useEffect(() => {
+    if (role === "patient") rememberSpecialty(specialtyFromSearch(window.location.search));
+  }, [role]);
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -50,7 +56,7 @@ export function EmailAuthForm({ mode, role }: Props) {
     }
     
     working.current = true;
-    setLoading(true);
+    setPending("email");
     try {
       await sendLoginLink(email.trim(), { role, remember });
       setStep("sent");
@@ -59,7 +65,7 @@ export function EmailAuthForm({ mode, role }: Props) {
       setError(errorMessage(err, "Could not send a sign-in link. Please try again."));
     } finally {
       working.current = false;
-      setLoading(false);
+      setPending(null);
     }
   };
 
@@ -67,7 +73,7 @@ export function EmailAuthForm({ mode, role }: Props) {
     if (working.current) return;
     working.current = true;
     setError(null);
-    setLoading(true);
+    setPending("google");
     try {
       const provider = new GoogleAuthProvider();
       await setPersistence(auth, remember ? browserLocalPersistence : browserSessionPersistence);
@@ -87,9 +93,11 @@ export function EmailAuthForm({ mode, role }: Props) {
       setError(errorMessage(err, "Google sign-in could not be completed. Try again or use an email sign-in link."));
     } finally {
       working.current = false;
-      setLoading(false);
+      setPending(null);
     }
   };
+
+  const busy = pending !== null;
 
   return <div className="page-shell workspace-shell grid lg:grid-cols-[1fr_440px] gap-12 lg:gap-20 items-center max-w-[1100px]">
     <div>
@@ -120,7 +128,7 @@ export function EmailAuthForm({ mode, role }: Props) {
       <div className="space-y-5">
         {error && <Alert>{error}</Alert>}
         {step === "email" ? <>
-          <Button id={role + "-" + mode + "-google-btn"} type="button" variant="secondary" onClick={handleGoogleSignIn} loading={loading}>
+          <Button id={role + "-" + mode + "-google-btn"} type="button" variant="secondary" onClick={handleGoogleSignIn} loading={pending === "google"} disabled={busy}>
             <svg className="size-4 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
               <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
               <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
@@ -136,7 +144,7 @@ export function EmailAuthForm({ mode, role }: Props) {
               </div>
             </Field>
             <label className="flex items-center gap-2.5 text-xs text-zinc-400 min-h-8"><input type="checkbox" checked={remember} onChange={event => setRemember(event.target.checked)} /> Remember me on this device</label>
-            <Button id={role + "-" + mode + "-send-link-btn"} type="submit" accent={accent} loading={loading} disabled={cooldown > 0}>
+            <Button id={role + "-" + mode + "-send-link-btn"} type="submit" accent={accent} loading={pending === "email"} disabled={busy || cooldown > 0}>
               {cooldown > 0 ? "Try again in " + cooldown + "s" : "Continue with email"} <ArrowRight className="size-4" aria-hidden />
             </Button>
           </form>
@@ -146,8 +154,8 @@ export function EmailAuthForm({ mode, role }: Props) {
             <h3 className="text-lg font-medium mb-2">Check your inbox.</h3>
             <p className="text-sm text-zinc-400 leading-relaxed">We sent a sign-in link to <strong className="text-zinc-100 break-all">{email}</strong>. Open it to continue securely.</p>
           </div>
-          <Button type="button" variant="secondary" disabled={cooldown > 0} loading={loading} onClick={() => handleSendLink()}>{cooldown > 0 ? "Resend link in " + cooldown + "s" : "Resend sign-in link"}</Button>
-          <button type="button" disabled={loading} onClick={() => { setStep("email"); setError(null); }} className="w-full min-h-10 text-xs text-zinc-400 hover:text-white">Use a different email</button>
+          <Button type="button" variant="secondary" disabled={busy || cooldown > 0} loading={pending === "email"} onClick={() => handleSendLink()}>{cooldown > 0 ? "Resend link in " + cooldown + "s" : "Resend sign-in link"}</Button>
+          <button type="button" disabled={busy} onClick={() => { setStep("email"); setError(null); }} className="w-full min-h-10 text-xs text-zinc-400 hover:text-white">Use a different email</button>
         </div>}
       </div>
       <p className="text-xs text-zinc-400 text-center border-t border-white/10 pt-6 mt-7">{isLogin ? "New to SecondCare? " : "Already have an account? "}<Link href={isLogin ? "/" + role + "/register" : "/" + role + "/login"} className="text-brand-200 hover:underline">{isLogin ? "Create an account" : "Sign in"}</Link></p>

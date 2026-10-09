@@ -16,6 +16,16 @@ const eslintConfig = defineConfig([
     ".npm-cache/**",
     ".firebase/**",
   ]),
+  {
+    // Node test suites and maintenance scripts run outside the bundler, so the
+    // rules written for application code (no `require`, no `module` shadowing)
+    // do not apply to them.
+    files: ["tests/**/*.{js,cjs,mjs,ts}", "scripts/**/*.{js,cjs,mjs,ts}"],
+    rules: {
+      "@typescript-eslint/no-require-imports": "off",
+      "@next/next/no-assign-module-variable": "off",
+    },
+  },
 ]);
 
 export default eslintConfig;

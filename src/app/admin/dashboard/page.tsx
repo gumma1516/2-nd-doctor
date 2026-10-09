@@ -131,7 +131,7 @@ export default function AdminDashboard() {
       <div className="px-3 py-5"><BrandLogo /><p className="eyebrow mt-5">Administration</p></div>
       <nav aria-label="Admin" className="flex overflow-x-auto gap-2 lg:flex-col lg:mt-5">{TABS.map(({ id, label, Icon }) => <button key={id} type="button" aria-current={activeTab === id ? "page" : undefined} onClick={() => setActiveTab(id)} className={"flex items-center gap-3 whitespace-nowrap rounded-xl px-4 py-3 text-left font-medium " + (activeTab === id ? "bg-brand-500/10 text-brand-300" : "hover:bg-zinc-800 text-zinc-400")}><Icon className="size-5" aria-hidden />{label}</button>)}</nav>
       <Link href="/" className="inline-block p-4 text-sm text-zinc-400 hover:text-white">Back to site</Link>
-      <div className="px-4 py-2"><AccountNav /></div>
+      <div className="px-4 py-2"><AccountNav alwaysShowSignOut /></div>
     </aside>
     <main className="min-w-0 flex-1 p-5 sm:p-8 lg:p-10 space-y-6 max-w-[1400px] mx-auto">
       <header className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-800 pb-6"><div><h1 className="text-3xl font-medium tracking-tight text-white">{TABS.find((tab) => tab.id === activeTab)?.label}</h1><p className="mt-1 text-sm text-zinc-400">{profile?.fullName || "Administrator"}</p></div><Button variant="secondary" loading={loading} disabled={Boolean(savingUid)} onClick={refresh} className="w-auto">Refresh data</Button></header>

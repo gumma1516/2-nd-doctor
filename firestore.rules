@@ -28,32 +28,48 @@ service cloud.firestore {
       return s is map && s.keys().hasOnly(['emailNotifications', 'language'])
         && s.emailNotifications is bool && s.language in ['en', 'hi'];
     }
-    function fileAt(files, i, prefix, maxSize) {
-      return files.size() <= i || (files[i] is map
-        && files[i].keys().hasOnly(['name', 'path', 'size', 'contentType'])
-        && text(files[i].name, 1, 255) && text(files[i].path, 1, 500)
-        && files[i].path.matches(prefix + '[^/]+')
-        && files[i].size is int && files[i].size > 0 && files[i].size <= maxSize
-        && files[i].contentType in ['application/pdf', 'image/jpeg', 'image/png', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']);
+    /**
+     * Rules evaluation is capped at 1000 expressions per request and rules
+     * functions are inlined, so every reference to `files[i]` re-evaluates the
+     * argument. Validating twenty attachments is only affordable at two
+     * references per element (a third reference costs about five attachments),
+     * so this checks the two things nothing else can check at write time: that
+     * no unknown key is injected, and that the path stays inside the owner's
+     * own folder, with no sub-path and an allowed extension.
+     *
+     * hasOnly bounds the key set but permits a subset, so an entry may arrive
+     * without its size/contentType metadata. That is the owner's own document
+     * and grants no extra access: Storage rules authorize reads and writes
+     * from the object path alone, checkout re-reads every attachment's real
+     * Storage metadata and rejects a mismatch (src/lib/server/payments.ts),
+     * and the UI falls back to the path when metadata is absent.
+     */
+    function fileAt(files, i, prefix, extensions) {
+      return files.size() <= i || (files[i].keys().hasOnly(['name', 'path', 'size', 'contentType'])
+        && files[i].path.matches(prefix + '[^/]{1,180}[.](?i:' + extensions + ')'));
     }
-    function fileSize(files, i) { return files.size() <= i ? 0 : files[i].size; }
-    function filesValid(files, prefix, maxFiles, maxSize) {
+    function filesValid(files, prefix, maxFiles, extensions) {
       return files is list && files.size() <= maxFiles
-        && fileAt(files,0,prefix,maxSize) && fileAt(files,1,prefix,maxSize)
-        && fileAt(files,2,prefix,maxSize) && fileAt(files,3,prefix,maxSize)
-        && fileAt(files,4,prefix,maxSize) && fileAt(files,5,prefix,maxSize)
-        && fileAt(files,6,prefix,maxSize) && fileAt(files,7,prefix,maxSize)
-        && fileAt(files,8,prefix,maxSize) && fileAt(files,9,prefix,maxSize)
-        && fileAt(files,10,prefix,maxSize) && fileAt(files,11,prefix,maxSize)
-        && fileAt(files,12,prefix,maxSize) && fileAt(files,13,prefix,maxSize)
-        && fileAt(files,14,prefix,maxSize) && fileAt(files,15,prefix,maxSize)
-        && fileAt(files,16,prefix,maxSize) && fileAt(files,17,prefix,maxSize)
-        && fileAt(files,18,prefix,maxSize) && fileAt(files,19,prefix,maxSize)
-        && fileSize(files,0) + fileSize(files,1) + fileSize(files,2) + fileSize(files,3)
-          + fileSize(files,4) + fileSize(files,5) + fileSize(files,6) + fileSize(files,7)
-          + fileSize(files,8) + fileSize(files,9) + fileSize(files,10) + fileSize(files,11)
-          + fileSize(files,12) + fileSize(files,13) + fileSize(files,14) + fileSize(files,15)
-          + fileSize(files,16) + fileSize(files,17) + fileSize(files,18) + fileSize(files,19) <= 500 * 1024 * 1024;
+        && fileAt(files,0,prefix,extensions)
+        && fileAt(files,1,prefix,extensions)
+        && fileAt(files,2,prefix,extensions)
+        && fileAt(files,3,prefix,extensions)
+        && fileAt(files,4,prefix,extensions)
+        && fileAt(files,5,prefix,extensions)
+        && fileAt(files,6,prefix,extensions)
+        && fileAt(files,7,prefix,extensions)
+        && fileAt(files,8,prefix,extensions)
+        && fileAt(files,9,prefix,extensions)
+        && fileAt(files,10,prefix,extensions)
+        && fileAt(files,11,prefix,extensions)
+        && fileAt(files,12,prefix,extensions)
+        && fileAt(files,13,prefix,extensions)
+        && fileAt(files,14,prefix,extensions)
+        && fileAt(files,15,prefix,extensions)
+        && fileAt(files,16,prefix,extensions)
+        && fileAt(files,17,prefix,extensions)
+        && fileAt(files,18,prefix,extensions)
+        && fileAt(files,19,prefix,extensions);
     }
     function profileFields(p) {
       return text(p.fullName, 3, 120) && text(p.phone, 10, 16)
@@ -124,7 +140,7 @@ service cloud.firestore {
         && specialty(request.resource.data.specialization)
         && request.resource.data.experience is int && request.resource.data.experience >= 0 && request.resource.data.experience <= 70
         && request.resource.data.files.size() > 0
-        && filesValid(request.resource.data.files,'users/' + uid + '/credentials/',5,10 * 1024 * 1024)
+        && filesValid(request.resource.data.files,'users/' + uid + '/credentials/',5,'pdf|jpg|jpeg|png')
         && getAfter(userPath(uid)).data.doctorAccess.status == 'PENDING'
         && getAfter(userPath(uid)).data.doctorAccess.specialization == request.resource.data.specialization;
       allow update: if admin()
@@ -135,10 +151,12 @@ service cloud.firestore {
         && getAfter(userPath(uid)).data.doctorAccess.specialization == resource.data.specialization;
       allow delete: if false;
     }
-    function caseFields(c, id) {
+    function caseDetails(c) {
       return specialty(c.department) && text(c.chiefComplaint,20,2000) && text(c.medications,0,1000)
-        && text(c.consentAt,20,40) && c.amount == 1650
-        && filesValid(c.files,'users/' + c.ownerId + '/cases/' + id + '/',20,50 * 1024 * 1024);
+        && text(c.consentAt,20,40) && c.amount == 1650;
+    }
+    function caseReports(c, id) {
+      return filesValid(c.files,'users/' + c.ownerId + '/cases/' + id + '/',20,'pdf|jpg|jpeg|png|docx');
     }
     function doctorCanRead(c) {
       return doctorFor(c.department) && c.paymentStatus == 'PAID'
@@ -150,7 +168,8 @@ service cloud.firestore {
       allow list: if active() && (resource.data.ownerId == request.auth.uid || admin() || doctorCanRead(resource.data));
       allow create: if patient() && request.resource.data.ownerId == request.auth.uid
         && request.resource.data.keys().hasOnly(['ownerId','department','chiefComplaint','medications','files','consentAt','amount','status','doctorId','doctorName','assignedAt','opinion','paidAt','createdAt','completedAt','paymentStatus','paymentOrderId','paymentId','updatedAt'])
-        && caseFields(request.resource.data,id)
+        && caseDetails(request.resource.data)
+        && request.resource.data.files is list && request.resource.data.files.size() == 0
         && request.resource.data.status == 'AWAITING_PAYMENT' && request.resource.data.paymentStatus == 'PENDING'
         && request.resource.data.paymentOrderId == null && request.resource.data.paymentId == null
         && request.resource.data.paidAt == null && request.resource.data.createdAt == request.time
@@ -160,7 +179,7 @@ service cloud.firestore {
         && resource.data.status == 'AWAITING_PAYMENT' && resource.data.paymentStatus == 'PENDING'
         && resource.data.paymentOrderId == null
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['files','department','chiefComplaint','medications','consentAt','updatedAt'])
-        && caseFields(request.resource.data,id))
+        && caseDetails(request.resource.data) && caseReports(request.resource.data,id))
         || (doctorFor(resource.data.department) && resource.data.doctorId == request.auth.uid
           && resource.data.status == 'IN_REVIEW' && resource.data.paymentStatus == 'PAID'
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','opinion','completedAt','updatedAt'])

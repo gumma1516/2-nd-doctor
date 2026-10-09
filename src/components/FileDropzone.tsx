@@ -96,6 +96,7 @@ export function FileDropzone({
         role="button"
         tabIndex={0}
         id={id}
+        aria-label={`${title}. ${limits.accept.map((a) => a.slice(1).toUpperCase()).join(", ")}, up to ${limits.maxFiles} files.`}
         aria-describedby={`${descId}${error ? ` ${id}-error` : ""}`}
         onClick={() => inputRef.current?.click()}
         onKeyDown={(e) => {
@@ -139,18 +140,21 @@ export function FileDropzone({
           </p>
           {helper && <p className="text-xs text-zinc-400 max-w-sm leading-relaxed mt-2">{helper}</p>}
         </div>
-        <input
-          ref={inputRef}
-          type="file"
-          className="hidden"
-          multiple
-          accept={limits.accept.join(",")}
-          onChange={(e) => {
-            if (e.target.files) addFiles(e.target.files);
-            e.target.value = ""; // allow re-selecting the same file
-          }}
-        />
       </div>
+      {/* Kept outside the clickable region: a programmatic click on the input
+          bubbles, and inside the dropzone it would re-enter its onClick. */}
+      <input
+        ref={inputRef}
+        type="file"
+        className="hidden"
+        tabIndex={-1}
+        multiple
+        accept={limits.accept.join(",")}
+        onChange={(e) => {
+          if (e.target.files) addFiles(e.target.files);
+          e.target.value = ""; // allow re-selecting the same file
+        }}
+      />
 
       {error && (
         <p id={`${id}-error`} role="alert" className="mt-2 text-xs text-red-400">
@@ -159,15 +163,17 @@ export function FileDropzone({
       )}
       {rejections.length > 0 && (
         <ul role="alert" className="mt-2 space-y-1 text-xs text-amber-400">
-          {rejections.map((r) => (
-            <li key={r}>{r}</li>
+          {rejections.map((r, i) => (
+            <li key={`${i}-${r}`}>{r}</li>
           ))}
         </ul>
       )}
 
       {items.length > 0 && (
         <div className="mt-6 space-y-3">
-          <p role="status" aria-live="polite" className="text-xs text-zinc-400">{items.length} file{items.length === 1 ? "" : "s"} selected · {formatSize(totalSize)} total</p>
+          <p role="status" aria-live="polite" className="text-xs text-zinc-400">
+            {items.length} of {limits.maxFiles} file{limits.maxFiles === 1 ? "" : "s"} · {formatSize(totalSize)} of {limits.maxTotalSizeMB} MB used
+          </p>
           <motion.ul layout={!reduced} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <AnimatePresence>
               {items.map(({ id: itemId, file }) => (
