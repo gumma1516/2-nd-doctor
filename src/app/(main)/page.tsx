@@ -1,9 +1,13 @@
 import Link from "next/link";
-import { ArrowRight, ArrowUpRight, Activity, Brain, HeartPulse, Bone, Scan, Stethoscope, FileText, ShieldCheck, Check, LockKeyhole, ClipboardCheck, Upload, ChevronDown } from "lucide-react";
+import { ArrowRight, ArrowUpRight, Activity, Brain, HeartPulse, Bone, Scan, Stethoscope, FileText, ShieldCheck, Check, LockKeyhole, ClipboardCheck, Upload, ChevronDown, Droplets, Wind, Soup } from "lucide-react";
 import { PRICING, SPECIALTIES, formatINR } from "@/lib/constants";
 import { FadeIn } from "@/components/FadeIn";
 
-const specialtyIcons = [HeartPulse, Brain, Scan, Bone, Activity, Stethoscope, Activity, Stethoscope];
+// One icon per specialty, in SPECIALTIES order.
+const specialtyIcons = {
+  Cardiology: HeartPulse, Neurology: Brain, Oncology: Scan, Orthopedics: Bone,
+  Nephrology: Activity, Pulmonology: Wind, Gastroenterology: Soup, Urology: Droplets,
+} as const;
 const steps = [
   { number: "01", icon: Upload, title: "Share your story.", text: "Choose a specialty, describe your concerns, and upload the reports that matter." },
   { number: "02", icon: Stethoscope, title: "Get a specialist perspective.", text: "After payment, your case is matched with an available, verified doctor in your chosen specialty." },
@@ -100,9 +104,9 @@ export default function Home() {
     <section id="specialists" className="page-shell section-space border-t border-white/8">
       <FadeIn><div className="text-center max-w-xl mx-auto mb-10"><p className="eyebrow mb-4">The right expertise</p><h2 className="section-title">Different specialties.<br /><span className="text-zinc-400">One thoughtful review.</span></h2><p className="text-sm text-zinc-400 leading-relaxed mt-5">Choose the specialty that fits your concern. Doctors complete registration verification before they can review cases.</p></div></FadeIn>
       <ul className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {SPECIALTIES.map((specialty, i) => {
-          const Icon = specialtyIcons[i];
-          return <li key={specialty}><Link href="/patient/register" className="glass-panel interactive-card rounded-2xl p-5 flex flex-col gap-5 h-full group" aria-label={"Get a second opinion in " + specialty}>
+        {SPECIALTIES.map((specialty) => {
+          const Icon = specialtyIcons[specialty];
+          return <li key={specialty}><Link href={"/patient/register?specialty=" + encodeURIComponent(specialty)} className="glass-panel interactive-card rounded-2xl p-5 flex flex-col gap-5 h-full group" aria-label={"Get a second opinion in " + specialty}>
             <div className="flex justify-between items-start"><Icon className="size-6 text-brand-200" strokeWidth={1.4} aria-hidden /><ArrowUpRight className="size-3.5 text-zinc-600 group-hover:text-brand-200 transition-colors" aria-hidden /></div><span className="text-[13px] font-medium">{specialty}</span>
           </Link></li>;
         })}

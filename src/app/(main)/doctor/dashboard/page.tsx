@@ -14,7 +14,7 @@ import type { DoctorProfile, Case } from "@/lib/data/types";
 import { errorMessage } from "@/lib/errors";
 
 export default function DoctorDashboard() {
-  const { user } = useAuth();
+  const { user, getToken } = useAuth();
   const [loading, setLoading] = useState(true);
   const [doctor, setDoctor] = useState<DoctorProfile | null>(null);
   const [cases, setCases] = useState<Case[]>([]);
@@ -54,18 +54,18 @@ export default function DoctorDashboard() {
       {doctor?.status === "REJECTED" && <Card><h2 className="text-xl font-semibold text-white mb-3">Application needs attention</h2><p className="text-zinc-400">Your registration could not be verified. Contact support to request a review of your application.</p></Card>}
       {doctor?.status === "VERIFIED" && <>
         <div className="grid sm:grid-cols-3 gap-4"><MetricCard label="Awaiting your review" value={cases.length} note="Cases assigned to your expertise" icon={Clock3} /><MetricCard label="Your specialty" value={doctor.specialization} note="Assignment follows your specialty" icon={FileText} /><MetricCard label="Registration" value="Verified" note="Eligible to review consultations" icon={ShieldCheck} /></div><p className="status-pill w-fit"><CheckCircle2 className="size-3.5" aria-hidden /> Verified specialist</p>
-        <h2 className="text-xl font-bold text-white">Your assigned patient cases</h2>
+        <h2 className="text-xl font-medium tracking-tight text-white">Your assigned patient cases</h2>
         <p className="text-sm text-zinc-400">Consultations matching your specialty are assigned to you after payment confirmation.</p>
         {!cases.length ? <Card className="text-center py-12"><span className="icon-tile mb-5"><FileText className="size-5" aria-hidden /></span><h3 className="text-xl font-medium mb-3">You’re all caught up.</h3><p className="text-sm text-zinc-400">New consultations in your specialty will appear here when assigned.</p></Card> : <div className="space-y-6">{cases.map((item) => <CaseReview key={item.id} item={item} doctor={doctor} onCompleted={() => {
           setCases((current) => current.filter((entry) => entry.id !== item.id));
           setNotice("Opinion submitted for " + displayCaseId(item.id) + ". The patient can now read it.");
-        }} />)}</div>}
+        }} getToken={getToken} />)}</div>}
       </>}
     </>}
   </div></div>;
 }
 
-function CaseReview({ item, doctor, onCompleted }: { item: Case; doctor: DoctorProfile; onCompleted: () => void }) {
+function CaseReview({ item, doctor, onCompleted, getToken }: { item: Case; doctor: DoctorProfile; onCompleted: () => void; getToken: () => Promise<string | null> }) {
   const [opinion, setOpinion] = useState("");
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -78,18 +78,20 @@ function CaseReview({ item, doctor, onCompleted }: { item: Case; doctor: DoctorP
     setAnalyzing(true);
     setError(null);
     try {
+      const token = await getToken();
+      if (!token) throw new Error("Sign in again to use the review assistant.");
       const res = await fetch("/api/ai/summary", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chiefComplaint: item.chiefComplaint, medications: item.medications })
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ caseId: item.id })
       });
-      if (!res.ok) throw new Error("AI Summary failed");
+      if (!res.ok) throw new Error("AI summary failed");
       const data = await res.json();
       setAiData(data);
       if (!opinion) setOpinion(data.draftOpinion);
       setEditing(true);
     } catch {
-      setError("Could not generate AI summary at this time.");
+      setError("The review assistant is unavailable. Write your opinion directly.");
     } finally {
       setAnalyzing(false);
     }

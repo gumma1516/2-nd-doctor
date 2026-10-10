@@ -4,7 +4,6 @@ import { DOCTOR_UPLOAD, PATIENT_UPLOAD } from "@/lib/constants";
 import type { StoredFile } from "./types";
 
 const MB = 1024 * 1024;
-const safeName = (name: string) => name.replace(/[^\w.\-() ]+/g, "_").slice(-120);
 const CONTENT_TYPES: Record<string, string> = {
   ".pdf": "application/pdf", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
   ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -30,12 +29,16 @@ export async function uploadUserFiles(uid: string, folder: string, files: File[]
     if (file.size === 0 || file.size > limits.maxFileSizeMB * MB) {
       throw new Error(`${file.name}: select a nonempty file up to ${limits.maxFileSizeMB} MB.`);
     }
-    return { file, contentType };
+    return { file, contentType, extension };
   });
   const uploaded: StoredFile[] = [];
   try {
-    for (const { file, contentType } of prepared) {
-      const path = `users/${uid}/${folder}/${crypto.randomUUID()}-${safeName(file.name)}`;
+    for (const { file, contentType, extension } of prepared) {
+      // A canonical `{uuid}.{ext}` object name keeps the original filename out of
+      // the path: no user-controlled characters, no length surprises, and the
+      // lowercase extension the security rules match on. The name the patient
+      // sees is kept in the returned metadata instead.
+      const path = `users/${uid}/${folder}/${crypto.randomUUID()}${extension}`;
       // Cancel the actual upload on timeout; racing an uncancelled promise can leave orphan reports.
       const task = uploadBytesResumable(ref(storage, path), file, { contentType });
       let timedOut = false;

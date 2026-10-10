@@ -5,7 +5,8 @@ import { LayoutDashboard, LogOut, UserRound } from "lucide-react";
 import { useAuth } from "./AuthProvider";
 import { homeFor } from "./email-link";
 
-export function AccountNav() {
+/** `alwaysShowSignOut` is for surfaces without a mobile menu of their own (the admin sidebar). */
+export function AccountNav({ alwaysShowSignOut = false }: { alwaysShowSignOut?: boolean } = {}) {
   const { user, profile, loading, logout } = useAuth();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -25,7 +26,7 @@ export function AccountNav() {
       <LayoutDashboard className="size-4" aria-hidden /><span className="hidden sm:inline">{profile ? "Dashboard" : "Finish account"}</span>
     </Link>
     {profile?.status === "active" && <Link href="/account" className="flex size-10 items-center justify-center text-zinc-400 hover:text-white rounded-xl hover:bg-white/5" aria-label="Account settings"><UserRound className="size-4" aria-hidden /></Link>}
-    <button disabled={busy} onClick={() => void signOut()} aria-label={busy ? "Signing out" : "Sign out"} className="hidden sm:flex size-10 items-center justify-center text-zinc-400 hover:text-white rounded-xl hover:bg-white/5 disabled:opacity-50"><LogOut className="size-4" aria-hidden /></button>
+    <button disabled={busy} onClick={() => void signOut()} aria-label={busy ? "Signing out" : "Sign out"} className={(alwaysShowSignOut ? "flex" : "hidden sm:flex") + " size-10 items-center justify-center text-zinc-400 hover:text-white rounded-xl hover:bg-white/5 disabled:opacity-50"}><LogOut className="size-4" aria-hidden /></button>
     {error && <span className="absolute top-12 right-0 w-60 glass-panel rounded-xl p-3 text-xs text-red-300" role="alert">{error}</span>}
   </div>;
 }

@@ -15,6 +15,7 @@ import { WorkspaceHeader } from "@/components/WorkspaceUI";
 import { ConsultationSteps } from "@/components/ConsultationSteps";
 import { ClientOnly } from "@/components/ClientOnly";
 import { getMyCase } from "@/lib/data/cases";
+import { parseSpecialty, specialtyFromSearch, takeSpecialty } from "@/lib/specialty-intent";
 
 type Errors = Partial<Record<"department" | "files" | "chiefComplaint" | "consent", string>>;
 
@@ -40,7 +41,10 @@ function ConsultationForm() {
       .catch((err: unknown) => { if (active) setError(err instanceof Error ? err.message : "Unable to restore your draft."); });
     return () => { active = false; };
   }, [user]);
-  if (error) return <div className="max-w-xl mx-auto p-8"><Alert>{error}</Alert><p className="text-zinc-400 mt-4">Enable browser storage, then reload this page.</p></div>;
+  if (error) return <div className="page-shell workspace-shell max-w-xl"><Alert>{error}</Alert>
+    <p className="text-sm text-zinc-400 mt-4 leading-relaxed">If your browser blocks local storage, enable it and reload this page. Otherwise start again from your dashboard.</p>
+    <Link href="/patient/dashboard" className="secondary-link mt-6">Back to my consultations</Link>
+  </div>;
   if (!user || saved?.uid !== user.uid) return <div className="p-8 text-zinc-400" role="status">Loading your consultation…</div>;
   if (saved.submitted && saved.value) return <div className="max-w-xl mx-auto p-8">
     <h1 className="text-2xl font-bold text-white mb-4">Your consultation has been saved</h1>
@@ -58,8 +62,13 @@ function ConsultationForm() {
 
 function EditableConsultation({ uid, initial }: { uid: string; initial: SavedDraft | null }) {
   const router = useRouter();
+  const { getToken } = useAuth();
   const [draftId] = useState(() => initial?.draft.id ?? crypto.randomUUID());
-  const [department, setDepartment] = useState<Specialty | "">(initial?.draft.department ?? "");
+  // A saved draft wins; otherwise honour the specialty the patient picked on a
+  // public page (this subtree only renders on the client, via <ClientOnly>).
+  const [department, setDepartment] = useState<Specialty | "">(
+    () => initial?.draft.department ?? specialtyFromSearch(window.location.search) ?? takeSpecialty() ?? ""
+  );
   const [files, setFiles] = useState<UploadItem[]>(() =>
     (initial?.files ?? []).map((file) => ({ id: crypto.randomUUID(), file }))
   );
@@ -81,18 +90,22 @@ function EditableConsultation({ uid, initial }: { uid: string; initial: SavedDra
     setAnalyzing(true);
     setAiNotice(null);
     try {
+      const token = await getToken();
+      if (!token) throw new Error("Sign in again to use the suggestion.");
       const res = await fetch("/api/ai/triage", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ chiefComplaint, medications })
       });
       if (!res.ok) throw new Error("Analysis failed");
       const data = await res.json();
-      setDepartment(data.department);
+      const suggested = parseSpecialty(data?.department);
+      if (!suggested) throw new Error("Unrecognised specialty");
+      setDepartment(suggested);
       setErrors((p) => ({ ...p, department: undefined }));
-      setAiNotice({ message: `AI Suggested ${data.department}: ${data.reasoning}`, type: "success" });
+      setAiNotice({ message: `Suggested ${suggested}: ${String(data?.reasoning ?? "")}`.trim(), type: "success" });
     } catch {
-      setAiNotice({ message: "Could not auto-suggest a specialty at this time. Please select manually.", type: "error" });
+      setAiNotice({ message: "A specialty could not be suggested right now. Please choose one above.", type: "error" });
     } finally {
       setAnalyzing(false);
     }
@@ -208,7 +221,7 @@ function EditableConsultation({ uid, initial }: { uid: string; initial: SavedDra
 
           {/* 2. Reports */}
           <section className="mb-10" aria-labelledby="reports-heading">
-            <h2 id="reports-heading" className="text-xl font-semibold text-white border-b border-zinc-800 pb-4 mb-6">
+            <h2 id="reports-heading" className="text-xl font-medium tracking-tight text-white border-b border-white/10 pb-4 mb-6">
               2. Add your medical records
             </h2>
             <FileDropzone
@@ -226,15 +239,15 @@ function EditableConsultation({ uid, initial }: { uid: string; initial: SavedDra
 
           {/* 3. History */}
           <section className="mb-10" aria-labelledby="history-heading">
-            <h2 id="history-heading" className="text-xl font-semibold text-white border-b border-zinc-800 pb-4 mb-6">
+            <h2 id="history-heading" className="text-xl font-medium tracking-tight text-white border-b border-white/10 pb-4 mb-6">
               3. Share your medical history
             </h2>
             <div className="space-y-4">
               <Field
                 id="consult-chiefComplaint"
-                label="Chief Complaint *"
+                label="Chief complaint *"
                 error={errors.chiefComplaint}
-                hint={`${chiefComplaint.trim().length}/2000 characters`}
+                hint={`${chiefComplaint.length} of 2000 characters`}
               >
                 <Textarea
                   id="consult-chiefComplaint"
@@ -246,7 +259,7 @@ function EditableConsultation({ uid, initial }: { uid: string; initial: SavedDra
                   placeholder="Describe your main symptoms, current diagnosis, and why you are seeking a second opinion..."
                 />
               </Field>
-              <Field id="consult-medications" label="Current Medications (optional)">
+              <Field id="consult-medications" label="Current medications (optional)">
                 <Textarea
                   id="consult-medications"
                   rows={2}
@@ -271,6 +284,7 @@ function EditableConsultation({ uid, initial }: { uid: string; initial: SavedDra
                   if (e.target.checked) setErrors((p) => ({ ...p, consent: undefined }));
                 }}
                 aria-invalid={!!errors.consent || undefined}
+                aria-describedby={errors.consent ? "consult-consent-error" : undefined}
                 className="mt-1 size-4 rounded border-zinc-700 bg-zinc-950 accent-brand-500"
               />
               <span className="text-sm text-zinc-400">
@@ -283,7 +297,7 @@ function EditableConsultation({ uid, initial }: { uid: string; initial: SavedDra
               </span>
             </label>
             {errors.consent && (
-              <p role="alert" className="mt-2 text-xs text-red-400 pl-7">
+              <p id="consult-consent-error" role="alert" className="mt-2 text-xs text-red-400 pl-7">
                 {errors.consent}
               </p>
             )}

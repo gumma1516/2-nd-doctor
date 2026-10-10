@@ -40,6 +40,7 @@ export default function DoctorOnboarding() {
   const [files, setFiles] = useState<UploadItem[]>([]);
   const [declaration, setDeclaration] = useState(false);
   const [errors, setErrors] = useState<Errors>({});
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [check, setCheck] = useState<{ uid: string; error: string | null } | null>(null);
@@ -90,7 +91,7 @@ export default function DoctorOnboarding() {
     if (!INDIAN_PHONE_REGEX.test(form.phone.replace(/[\s-]/g, ""))) e.phone = "Enter a valid 10-digit mobile number.";
     if (!REG_NUMBER_REGEX.test(form.regNumber.trim())) e.regNumber = "Enter a valid registration number.";
     if (form.council.trim().length < 2 || form.council.trim().length > 120) e.council = "Enter the issuing medical council (2-120 characters).";
-    if (!SPECIALTIES.includes(form.specialization as Specialty)) e.specialization = "Select your specialization.";
+    if (!SPECIALTIES.includes(form.specialization as Specialty)) e.specialization = "Select your specialty.";
     const exp = Number(form.experience);
     if (!form.experience || !Number.isInteger(exp) || exp < 0 || exp > 60) e.experience = "Enter whole years of experience (0-60).";
     if (files.length === 0) e.files = "Upload your degree and registration certificate.";
@@ -104,6 +105,7 @@ export default function DoctorOnboarding() {
     
     const found = validate();
     setErrors(found);
+    setSubmitError(null);
     if (Object.keys(found).length) {
       document.getElementById(`doc-${Object.keys(found)[0]}`)?.focus();
       return;
@@ -127,7 +129,7 @@ export default function DoctorOnboarding() {
 
       setSubmitted(true);
     } catch (err) {
-      setErrors({ declaration: err instanceof Error ? err.message : "Failed to submit application. Please try again." });
+      setSubmitError(err instanceof Error ? err.message : "Your application could not be submitted. Please try again.");
     } finally {
       saving.current = false;
       setLoading(false);
@@ -148,7 +150,7 @@ export default function DoctorOnboarding() {
           <div className="size-20 rounded-full bg-teal-500/10 border border-teal-500/20 text-teal-400 mx-auto flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(20,184,166,0.25)]">
             <CheckCircle2 className="size-10" aria-hidden />
           </div>
-          <h1 className="text-2xl font-medium tracking-tight text-white mb-3">Application Submitted</h1>
+          <h1 className="text-2xl font-medium tracking-tight text-white mb-3">Application submitted</h1>
           <p className="text-zinc-400 mb-8">
             Thank you, {form.fullName ? form.fullName.split(" ").slice(0, 2).join(" ") : (profile?.fullName || "Doctor")}. Your credentials are awaiting administrator review.
             You can review assigned consultations after verification. Check your dashboard for the review outcome.
@@ -170,34 +172,35 @@ export default function DoctorOnboarding() {
           <div className="icon-tile mb-5">
             <ShieldAlert className="size-6" aria-hidden />
           </div>
-          <h1 className="text-2xl font-medium tracking-tight text-white">Apply as a Specialist</h1>
+          <h1 className="text-2xl font-medium tracking-tight text-white">Apply as a specialist</h1>
           <p className="text-sm text-zinc-400 mt-2">Join our network of verified medical experts.</p>
         </div>
 
         <form onSubmit={handleSubmit} noValidate className="space-y-6">
-          {errorCount > 0 && <Alert>Please fix the highlighted fields.</Alert>}
+          {submitError && <Alert>{submitError}</Alert>}
+          {errorCount > 0 && <Alert>Please fix {errorCount === 1 ? "the highlighted field" : `the ${errorCount} highlighted fields`} below before submitting.</Alert>}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Field id="doc-fullName" label="Full Name *" error={errors.fullName}>
+            <Field id="doc-fullName" label="Full name *" error={errors.fullName}>
               <Input id="doc-fullName" accent="teal" autoComplete="name" value={form.fullName} onChange={update("fullName")} invalid={!!errors.fullName} placeholder="Dr. Priya Mehta" />
             </Field>
             
-            <Field id="doc-phone" label="Mobile Number *" error={errors.phone}>
+            <Field id="doc-phone" label="Mobile number *" error={errors.phone}>
               <Input id="doc-phone" accent="teal" type="tel" inputMode="numeric" autoComplete="tel-national" value={form.phone} onChange={update("phone")} invalid={!!errors.phone} placeholder="98765 43210" maxLength={14} />
             </Field>
-            <Field id="doc-experience" label="Years of Experience *" error={errors.experience}>
+            <Field id="doc-experience" label="Years of experience *" error={errors.experience}>
               <Input id="doc-experience" accent="teal" type="number" min={0} max={60} value={form.experience} onChange={update("experience")} invalid={!!errors.experience} placeholder="10" />
             </Field>
-            <Field id="doc-regNumber" label="Medical Registration No. *" error={errors.regNumber} hint="NMC or State Medical Council number">
+            <Field id="doc-regNumber" label="Medical registration number *" error={errors.regNumber} hint="NMC or State Medical Council number">
               <Input id="doc-regNumber" accent="teal" value={form.regNumber} onChange={update("regNumber")} invalid={!!errors.regNumber} placeholder="e.g. 12345" />
             </Field>
-            <Field id="doc-council" label="Issuing Council *" error={errors.council}>
+            <Field id="doc-council" label="Issuing council *" error={errors.council}>
               <Input id="doc-council" accent="teal" value={form.council} onChange={update("council")} invalid={!!errors.council} placeholder="e.g. Maharashtra Medical Council" />
             </Field>
-            <Field id="doc-specialization" label="Specialization *" error={errors.specialization} className="md:col-span-2">
+            <Field id="doc-specialization" label="Specialty *" error={errors.specialization} className="md:col-span-2">
               <Select id="doc-specialization" accent="teal" value={form.specialization} onChange={update("specialization")} invalid={!!errors.specialization}>
                 <option value="" disabled>
-                  Select your specialization
+                  Select your specialty
                 </option>
                 {SPECIALTIES.map((s) => (
                   <option key={s} value={s}>
@@ -208,7 +211,7 @@ export default function DoctorOnboarding() {
             </Field>
 
             <div className="md:col-span-2">
-              <p className="block text-sm font-medium text-zinc-300 mb-1">Credential Documents *</p>
+              <p className="block text-sm font-medium text-zinc-300 mb-1">Credential documents *</p>
               <FileDropzone
                 id="doc-files"
                 accent="teal"
@@ -226,8 +229,8 @@ export default function DoctorOnboarding() {
           </div>
 
           <div className="bg-zinc-900/50 p-5 rounded-xl border border-zinc-800 space-y-4">
-            <h3 className="text-white font-semibold">Oath-Gated Access & Ethical Principles</h3>
-            <p className="text-sm text-zinc-400">Before joining SecondCare as a clinical decision-maker, you must commit to the following principles:</p>
+            <h3 className="text-white font-semibold">Professional declaration</h3>
+            <p className="text-sm text-zinc-400">Before reviewing patient records on SecondCare, please confirm the following:</p>
             <label className="flex items-start gap-3 cursor-pointer mt-2">
               <input
                 id="doc-declaration"
@@ -237,23 +240,28 @@ export default function DoctorOnboarding() {
                   setDeclaration(e.target.checked);
                   if (e.target.checked) setErrors((p) => ({ ...p, declaration: undefined }));
                 }}
+                aria-invalid={!!errors.declaration || undefined}
+                aria-describedby={errors.declaration ? "doc-declaration-error" : undefined}
                 className="mt-1 size-4 accent-teal-500 shrink-0"
               />
               <span className="text-sm text-zinc-300 leading-relaxed">
-                <strong>Do No Harm & Pursuit of Truth:</strong> I will prioritize human safety, strive for accuracy, and acknowledge the limits of AI-assisted decision support.<br/>
-                <span className="block mt-2"><strong>Data Sanctity & Human Agency:</strong> I will guard patient confidentiality and ensure that I remain the ultimate arbiter of truth, using AI as a tool, not a replacement for my clinical judgment.</span>
+                <strong>Do no harm:</strong> I will prioritize patient safety, give an opinion only within
+                my area of competence, and say plainly when the records I am given are not enough to form one.<br/>
+                <span className="block mt-2"><strong>Confidentiality:</strong> I will keep patient records
+                confidential, use them solely to prepare this second opinion, and remain personally
+                responsible for the clinical judgment I record.</span>
                 <span className="block mt-2 text-zinc-400">I declare that my information is true, I hold a valid medical registration, and I agree to the <Link href="/terms" target="_blank" className="text-teal-400 hover:underline">Terms of Service</Link>.</span>
               </span>
             </label>
             {errors.declaration && (
-              <p role="alert" className="mt-2 text-xs text-red-400 pl-7">
+              <p id="doc-declaration-error" role="alert" className="mt-2 text-xs text-red-400 pl-7">
                 {errors.declaration}
               </p>
             )}
           </div>
 
           <Button id="doctor-submit-verification-btn" type="submit" accent="teal" loading={loading} className="py-4 text-lg">
-            Submit for Verification
+            Submit for verification
           </Button>
 
         </form>

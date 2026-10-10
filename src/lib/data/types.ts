@@ -99,3 +99,19 @@ export type Case = {
 export const DEFAULT_SETTINGS: UserSettings = { emailNotifications: true, language: "en" };
 
 export const toDate = (t: Timestamp | null | undefined) => (t ? t.toDate() : null);
+
+/**
+ * Firestore rules bound the keys of a `files` entry but cannot require every
+ * one of them, so treat the display metadata as optional and fall back to the
+ * storage path, which the rules do guarantee.
+ */
+export function fileLabel(file: StoredFile): string {
+  const name = typeof file.name === "string" ? file.name.trim() : "";
+  return name || file.path.split("/").pop() || "Attached file";
+}
+
+export function fileSizeLabel(file: StoredFile): string | null {
+  if (!Number.isFinite(file.size) || file.size <= 0) return null;
+  const kb = 1024;
+  return file.size < kb ** 2 ? `${Math.round(file.size / kb)} KB` : `${(file.size / kb ** 2).toFixed(1)} MB`;
+}

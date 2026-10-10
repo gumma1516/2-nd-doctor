@@ -22,12 +22,20 @@ export const metadata: Metadata = {
   description:
     "Upload your medical records and get a second opinion from verified specialists. Make confident decisions about your diagnosis and treatment.",
   keywords: ["second opinion", "medical second opinion India", "verified specialists", "online doctor consultation", "medical review"],
+  applicationName: "SecondCare",
+  alternates: { canonical: "/" },
   openGraph: {
     title: "SecondCare | Trusted Second Opinions from Verified Specialists",
     description: "Upload your medical records and get a second opinion from verified specialists.",
+    url: "/",
     type: "website",
     locale: "en_IN",
     siteName: "SecondCare",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "SecondCare | Trusted Second Opinions from Verified Specialists",
+    description: "Upload your medical records and get a second opinion from verified specialists.",
   },
   robots: { index: true, follow: true },
 };

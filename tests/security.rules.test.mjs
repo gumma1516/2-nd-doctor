@@ -12,6 +12,15 @@ const projectId = 'demo-secondcare';
 const now = Timestamp.now();
 const authTime = Math.floor(Date.now() / 1000);
 let env;
+/**
+ * storage.rules authorizes medical files by reading Firestore (cross-service
+ * rules). The Storage emulator does not evaluate firestore.get/exists and
+ * denies every such rule, so those cases are skipped here rather than reported
+ * as rule failures. They still apply in production — verify them against a
+ * staging bucket. Probed rather than hardcoded, so the suite starts covering
+ * them as soon as the emulator supports it.
+ */
+let crossServiceRules = false;
 const user = (uid, role = 'patient', access = null) => ({
   uid, email: `${uid}@example.test`, role, fullName: `Test ${uid}`, phone: '9876543210',
   dob: null, place: null, photoURL: null, photoPath: null, status: 'active', isVerified: true,
@@ -41,6 +50,24 @@ before(async () => {
     firestore: { rules: await readFile(new URL('../firestore.rules', import.meta.url), 'utf8') },
     storage: { rules: await readFile(new URL('../storage.rules', import.meta.url), 'utf8') },
   });
+  const probe = await initializeTestEnvironment({
+    projectId: 'demo-crossservice-probe',
+    firestore: { rules: `rules_version='2'; service cloud.firestore { match /databases/{d}/documents { match /{a=**} { allow read, write: if true; } } }` },
+    storage: { rules: `rules_version='2'; service firebase.storage { match /b/{b}/o { match /probe/{f} { allow write: if firestore.exists(/databases/(default)/documents/users/$(request.auth.uid)); } } }` },
+  });
+  try {
+    await probe.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'users', 'probe'), { ok: true }));
+    await uploadBytes(ref(probe.authenticatedContext('probe', { email_verified: true }).storage(), 'probe/a.pdf'),
+      new Uint8Array(4), { contentType: 'application/pdf' });
+    crossServiceRules = true;
+  } catch {
+    crossServiceRules = false;
+  } finally {
+    await probe.cleanup();
+  }
+  if (!crossServiceRules) {
+    console.log('# storage emulator cannot evaluate cross-service firestore.* rules: Storage cases skipped');
+  }
 });
 after(async () => { await env?.cleanup(); });
 beforeEach(async () => {
@@ -137,18 +164,20 @@ test('disabled and revoked sessions cannot read data or files', async () => {
   });
   for (const uid of ['patient1','doctor1']) {
     await assertFails(getDoc(doc(context(uid).firestore(),'cases','paid')));
-    await assertFails(getBytes(ref(context(uid).storage(),medicalFile('patient1','paid').path)));
+    if (crossServiceRules) await assertFails(getBytes(ref(context(uid).storage(),medicalFile('patient1','paid').path)));
   }
 });
 
-test('private report reads allow owner/admin/matching doctor and deny everyone else', async () => {
+test('private report reads allow owner/admin/matching doctor and deny everyone else', async (t) => {
+  if (!crossServiceRules) return t.skip('Storage emulator cannot evaluate cross-service firestore.* rules');
   const path=medicalFile('patient1','paid').path;
   for (const uid of ['patient1','admin','doctor1']) await assertSucceeds(getBytes(ref(context(uid).storage(),path)));
   for (const uid of ['patient2','doctor2','doctor3','pending']) await assertFails(getBytes(ref(context(uid).storage(),path)));
   await assertFails(getBytes(ref(env.unauthenticatedContext().storage(),path)));
 });
 
-test('upload ownership, content type, immutability and cleanup are enforced', async () => {
+test('upload ownership, content type, immutability and cleanup are enforced', async (t) => {
+  if (!crossServiceRules) return t.skip('Storage emulator cannot evaluate cross-service firestore.* rules');
   const own=context('patient1').storage();
   const path=medicalFile('patient1','unpaid').path;
   const bytes=new Uint8Array(8);
@@ -158,4 +187,76 @@ test('upload ownership, content type, immutability and cleanup are enforced', as
   await assertFails(uploadBytes(ref(own,path),bytes,{contentType:'application/pdf'}));
   await assertSucceeds(deleteObject(ref(own,path)));
   await assertFails(deleteObject(ref(own,medicalFile('patient1','paid').path)));
+});
+
+/**
+ * Rules evaluation is capped at 1000 expressions per request. Before the
+ * per-attachment check was reduced to two references to `files[i]`, attaching
+ * three or more reports exceeded that cap and Firestore denied the write — so
+ * these cover the budget, not just the authorization logic.
+ */
+const report = (uid, id, n, ext = 'pdf') => ({
+  name: `report${n}.${ext}`, path: `users/${uid}/cases/${id}/report${n}.${ext}`,
+  size: 1024, contentType: 'application/pdf',
+});
+const draft = (id, ownerId = 'patient1') => ({
+  ...consultation(id, ownerId, false), files: [], createdAt: serverTimestamp(),
+});
+
+test('a patient can attach the full advertised number of reports', async () => {
+  const db = context('patient1').firestore();
+  for (const count of [1, 2, 3, 10, 20]) {
+    const id = `attach${count}`;
+    await assertSucceeds(setDoc(doc(db, 'cases', id), draft(id)));
+    const files = Array.from({ length: count }, (_, i) => report('patient1', id, i));
+    await assertSucceeds(updateDoc(doc(db, 'cases', id), { files }));
+    assert.equal((await getDoc(doc(db, 'cases', id))).data().files.length, count);
+  }
+  const over = Array.from({ length: 21 }, (_, i) => report('patient1', 'attach20', i));
+  await assertFails(updateDoc(doc(db, 'cases', 'attach20'), { files: over }));
+});
+
+test('a doctor can submit the full number of credential documents', async () => {
+  const db = context('bulkdoc').firestore();
+  const credential = (n, ext = 'pdf') => ({
+    name: `credential${n}.${ext}`, path: `users/bulkdoc/credentials/credential${n}.${ext}`,
+    size: 1024, contentType: 'application/pdf',
+  });
+  const batch = writeBatch(db);
+  batch.set(doc(db, 'users', 'bulkdoc'), { ...user('bulkdoc', 'doctor', { status: 'PENDING', specialization: 'Cardiology' }),
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(), lastLogin: serverTimestamp() });
+  batch.set(doc(db, 'doctorProfiles', 'bulkdoc'), { ...doctor('bulkdoc', 'PENDING'),
+    files: [credential(0), credential(1, 'JPG'), credential(2), credential(3), credential(4)],
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(), reviewedAt: null });
+  await assertSucceeds(batch.commit());
+});
+
+test('attachment paths stay inside the owner folder and keep an allowed extension', async () => {
+  const db = context('patient1').firestore();
+  let seq = 0;
+  // Each attempt uses its own unpaid consultation: re-creating one would be an
+  // update of immutable fields and would fail for an unrelated reason.
+  const attach = async (change) => {
+    const id = `shape${seq++}`;
+    await assertSucceeds(setDoc(doc(db, 'cases', id), draft(id)));
+    return updateDoc(doc(db, 'cases', id), { files: [{ ...report('patient1', id, 0), ...change(id) }] });
+  };
+  // Another patient's folder, another case, a sub-path, traversal, and an
+  // unknown key are all rejected.
+  await assertFails(attach((id) => ({ path: `users/patient2/cases/${id}/report0.pdf` })));
+  await assertFails(attach(() => ({ path: 'users/patient1/cases/othercase/report0.pdf' })));
+  await assertFails(attach((id) => ({ path: `users/patient1/cases/${id}/sub/report0.pdf` })));
+  await assertFails(attach((id) => ({ path: `users/patient1/cases/${id}/../../patient2/report0.pdf` })));
+  await assertFails(attach(() => ({ injected: 'x' })));
+  // Executable and markup extensions are rejected; the advertised types, in any
+  // letter case, are accepted.
+  for (const ext of ['exe', 'html', 'svg', 'js']) {
+    await assertFails(attach((id) => ({ path: `users/patient1/cases/${id}/report0.${ext}`, name: `report0.${ext}` })));
+  }
+  for (const ext of ['pdf', 'jpg', 'jpeg', 'png', 'docx', 'PDF', 'JpG']) {
+    await assertSucceeds(attach((id) => ({ path: `users/patient1/cases/${id}/report0.${ext}`, name: `report0.${ext}` })));
+  }
+  // Reports are attached by a later update, never at create time.
+  await assertFails(setDoc(doc(db, 'cases', 'preattached'),
+    { ...draft('preattached'), files: [report('patient1', 'preattached', 0)] }));
 });

@@ -11,7 +11,7 @@ import { ConsultationSteps } from "@/components/ConsultationSteps";
 import { PRICING, formatINR } from "@/lib/constants";
 import { draftStore, type SavedDraft } from "@/lib/draft-store";
 import { useAuth } from "@/lib/auth/AuthProvider";
-import { createCase, getMyCase } from "@/lib/data/cases";
+import { createCase, displayCaseId, getMyCase } from "@/lib/data/cases";
 import type { Case } from "@/lib/data/types";
 import { openCheckout } from "@/lib/razorpay";
 
@@ -102,9 +102,9 @@ function PatientCheckout({ user, resumeId }: { user: User; resumeId: string | nu
     <div className="flex-1 flex items-center justify-center py-12 px-4">
       <Card className="max-w-lg w-full p-10 text-center">
         <CheckCircle2 className="size-16 text-emerald-400 mx-auto mb-6" aria-hidden />
-        <h1 className="text-3xl font-bold text-white mb-3">Payment confirmed</h1>
+        <h1 className="text-3xl font-medium tracking-[-.04em] text-white mb-3">Payment confirmed</h1>
         <p className="text-zinc-400 mb-3">Your reports are submitted. Your dashboard shows the assigned specialist or whether your consultation is awaiting specialist assignment.</p>
-        <p className="text-sm text-zinc-500 mb-8">Case ID: <span className="font-mono">{paidCaseId}</span></p>
+        <p className="text-sm text-zinc-500 mb-8">Consultation reference: <span className="font-mono text-zinc-300">{displayCaseId(paidCaseId)}</span></p>
         <Link href="/patient/dashboard" className="primary-link">Go to my dashboard <ArrowRight className="inline size-4" aria-hidden /></Link>
       </Card>
     </div>
@@ -137,7 +137,7 @@ function PatientCheckout({ user, resumeId }: { user: User; resumeId: string | nu
             <dl className="space-y-4">
               <div className="flex justify-between text-zinc-300"><dt>Specialist consultation</dt><dd>{formatINR(PRICING.consultationFee)}</dd></div>
               <div className="flex justify-between text-zinc-400"><dt>Platform fee (incl. GST)</dt><dd>{formatINR(PRICING.platformFee)}</dd></div>
-              <div className="flex justify-between border-t border-zinc-800 pt-4 text-white font-bold text-xl"><dt>Total</dt><dd>{formatINR(PRICING.total)}</dd></div>
+              <div className="flex justify-between border-t border-white/10 pt-4 text-white font-medium text-xl"><dt>Total</dt><dd>{formatINR(PRICING.total)}</dd></div>
             </dl>
             {!consultation && <Link href="/patient/dashboard/new-consultation" className="block text-brand-400 mt-6 hover:underline">Edit consultation details</Link>}
           </Card>
